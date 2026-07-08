@@ -43,4 +43,29 @@ Current step: {step}/{max_steps}
 
 {memory_context}
 
-Respond with structured JSON: {{"thought_summary": "...", "action": "query"|"final", "sql": "...", "final_answer": null|{{...}}}}"""
+Respond with ONLY a JSON object. No markdown fences, no extra text.
+
+{{
+  "thought_summary": "<one sentence, what you plan to do>",
+  "action": "query",
+  "sql": "<SQL query to execute>",
+  "final_answer": null
+}}
+
+OR:
+
+{{
+  "thought_summary": "<one sentence, why you have the answer>",
+  "action": "final",
+  "sql": null,
+  "final_answer": {{
+    "value": <the numeric answer as a number, e.g. 15612.43>,
+    "unit": "<EUR, count, percent, etc.>",
+    "explanation": "<how you computed it>"
+  }}
+}}
+
+IMPORTANT:
+- If action=final, final_answer.value MUST be a number (int or float), not a string.
+- final_answer.value is the raw number, not formatted with commas or currency symbols.
+- Do NOT include any text outside the JSON object."""

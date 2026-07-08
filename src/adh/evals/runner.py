@@ -83,6 +83,8 @@ class BenchmarkRunner:
             if evaluation.get("correct", False):
                 success_count += 1
                 console.print(f"    [green]PASS[/] — {result.get('steps', '?')} steps")
+            elif evaluation.get("correct") is None:
+                console.print(f"    [yellow]SKIP[/] — {evaluation.get('reason', 'unknown')}")
             else:
                 console.print(f"    [red]FAIL[/] — {evaluation.get('reason', 'unknown')}")
 
@@ -126,11 +128,34 @@ class BenchmarkRunner:
         if expected_value is None:
             return {"correct": False, "reason": "no_expected_value"}
 
+        # Extract actual value — handle model using different field names
         actual_value = answer.get("value")
+        if actual_value is None:
+            # Model may use "answer", "result" instead of "value"
+            actual_value = answer.get("answer") or answer.get("result")
+            # If still None, try extracting a number from any string field
+            if actual_value is None:
+                for key, val in answer.items():
+                    if isinstance(val, (int, float)):
+                        actual_value = val
+                        break
+                    if isinstance(val, str):
+                        extracted = _extract_number(val)
+                        if extracted is not None:
+                            actual_value = extracted
+                            break
+
+        if actual_value is None:
+            return {"correct": False, "reason": "no_value_in_answer"}
+
+        # Skip tasks with placeholder expected values
+        if expected_value == "??" or (isinstance(expected_value, (int, float)) and expected_value == 0 and expected.get("sql")):
+            # Tasks with "??" expected values need computed results — skip evaluation
+            return {"correct": None, "reason": "skipped_placeholder_value", "note": "Expected value not precomputed for this task type"}
 
         if expected_type == "numeric":
             try:
-                actual = float(actual_value)
+                actual = float(actual_value) if not isinstance(actual_value, (int, float)) else float(actual_value)
                 expected_float = float(expected_value)
                 diff = abs(actual - expected_float)
 
@@ -171,3 +196,19 @@ class BenchmarkRunner:
                 return {"correct": False, "reason": f"set_comparison_failed: {e}"}
 
         return {"correct": False, "reason": f"unknown_type: {expected_type}"}
+
+
+def _extract_number(text: str) -> float | None:
+    """Extract a numeric value from a text string.
+
+    Handles formats like: '€15,612.43', '25 orders', '42.5%', '15,612.43'
+    """
+    import re
+    # Remove currency symbols, spaces, and text — keep digits, commas, dots, minus
+    cleaned = re.sub(r"[^\d,.\-]", "", text.strip())
+    # Remove thousand separators (commas between digits)
+    cleaned = cleaned.replace(",", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None

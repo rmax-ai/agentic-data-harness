@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -211,13 +212,14 @@ class OpenAISQLAgent:
             if not raw:
                 raise ValueError("Empty response from model")
 
-            data = json.loads(raw)
+            # Extract JSON from potentially noisy output (trailing text, markdown fences)
+            data = _extract_json(raw)
             return AgentAction.model_validate(data)
 
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             # Model returned invalid JSON — treat as a retry signal
             return AgentAction(
-                thought_summary=f"Invalid JSON response: {str(e)[:100]}",
+                thought_summary=f"Invalid response format: {str(e)[:100]}",
                 action="query",
                 sql="SELECT 1",
             )
@@ -263,3 +265,60 @@ def _format_rows(rows: list[tuple]) -> str:
     if not rows:
         return "[]"
     return json.dumps([list(r) for r in rows])[:500]
+
+
+def _extract_json(text: str) -> dict[str, Any]:
+    """Extract JSON object from text that may have trailing content or markdown fences.
+
+    Handles:
+    - {'key': 'value'} followed by extra text
+    - ```json ... ``` blocks
+    - Trailing newlines and whitespace
+    """
+    text = text.strip()
+
+    # Try stripping markdown fences
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove opening fence
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        # Remove closing fence
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    # Try direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting from first { to matching }
+    start = text.find("{")
+    if start == -1:
+        raise json.JSONDecodeError("No JSON object found", text, 0)
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text[start:], start):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start:i + 1])
+
+    raise json.JSONDecodeError("Unclosed JSON object", text, start)
