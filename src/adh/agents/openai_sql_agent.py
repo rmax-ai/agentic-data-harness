@@ -134,12 +134,16 @@ class OpenAISQLAgent:
                     query_history.append(query_entry)
                     error_context = ""
 
-                    # If rows are empty, provide diagnostic feedback
+                    # If rows are empty, provide diagnostic feedback via why-not
                     if result.row_count == 0:
-                        error_context = (
-                            "The query returned zero rows. "
-                            "Try checking your filter conditions or inspecting available values."
-                        )
+                        fb = result.feedback or {}
+                        diag = fb.get("diagnostics", {})
+                        hint = fb.get("hint", "")
+                        error_context = f"Query returned zero rows.\n"
+                        if hint:
+                            error_context += f"Hint: {hint}\n"
+                        if diag:
+                            error_context += f"Available values: {json.dumps(diag)[:300]}\n"
                 else:
                     query_entry["error"] = result.error_message
                     query_entry["error_type"] = result.error_type
@@ -149,7 +153,22 @@ class OpenAISQLAgent:
                         f"Last query failed: {result.error_type} - {result.error_message}\n"
                     )
                     if result.feedback:
-                        error_context += f"Hint: {result.feedback.get('hint', '')}"
+                        fb = result.feedback
+                        hint = fb.get("hint", "")
+                        if hint:
+                            error_context += f"Hint: {hint}\n"
+                        # Show available columns
+                        avail_cols = fb.get("available_columns")
+                        if avail_cols:
+                            error_context += f"Available columns in referenced table: {', '.join(avail_cols[:20])}\n"
+                        # Show suggested columns
+                        suggested = fb.get("suggested_columns")
+                        if suggested:
+                            error_context += f"Did you mean: {', '.join(suggested)}?\n"
+                        # Show diagnostics (sample values, date ranges)
+                        diag = fb.get("diagnostics", {})
+                        if diag:
+                            error_context += f"Diagnostics: {json.dumps(diag)[:300]}\n"
 
                 continue
 

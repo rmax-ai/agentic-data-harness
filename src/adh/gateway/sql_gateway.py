@@ -11,6 +11,7 @@ from adh.db.duckdb_runner import DuckDBRunner
 from adh.db.sql_safety import validate_sql
 from adh.gateway.fingerprint import compute_fingerprints
 from adh.gateway.cache import QueryCache
+from adh.gateway.why_not import build_why_not_feedback
 
 
 @dataclass
@@ -95,6 +96,7 @@ class SQLGateway:
                 fingerprint=fp,
                 cache_status="miss" if self._cache is not None else "executed",
                 latency_ms=latency,
+                feedback=_empty_feedback_if_needed(rows, sql, self._runner),
             )
         except Exception as e:
             latency = _elapsed(t0)
@@ -118,7 +120,7 @@ class SQLGateway:
                 fingerprint=fp,
                 cache_status="miss" if self._cache is not None else "executed",
                 latency_ms=latency,
-                feedback=_build_feedback(error_type, error_msg, self._runner, sql),
+                feedback=build_why_not_feedback(error_type, error_msg, self._runner, sql),
             )
 
     def _cached_to_result(self, cached: dict[str, Any], fingerprint: str, latency_ms: int) -> SQLResult:
@@ -191,23 +193,13 @@ def _classify_error(error_msg: str) -> str:
     return "unknown"
 
 
-def _build_feedback(
-    error_type: str,
-    error_msg: str,
-    runner: DuckDBRunner,
+def _empty_feedback_if_needed(
+    rows: list[tuple],
     sql: str,
-) -> dict[str, Any]:
-    """Build structured feedback for the agent."""
-    feedback: dict[str, Any] = {
-        "error_type": error_type,
-        "message": error_msg,
-    }
+    runner: DuckDBRunner,
+) -> dict[str, Any] | None:
+    """Generate why-not feedback if query returns zero rows."""
+    if len(rows) > 0:
+        return None
+    return build_why_not_feedback("empty_result", "Query returned zero rows", runner, sql)
 
-    if error_type == "missing_column":
-        # Try to extract table name from the SQL and list available columns
-        feedback["hint"] = "Check the schema for available columns."
-
-    elif error_type == "empty_result":
-        feedback["hint"] = "The query returned zero rows. Check your filter conditions."
-
-    return feedback
