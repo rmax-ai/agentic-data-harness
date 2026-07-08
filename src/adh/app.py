@@ -35,6 +35,8 @@ def _run_single_mode(
     output_dir: str,
     max_steps: int,
     seed: int,
+    repeat: int,
+    cache_db_path: str | None,
 ) -> dict:
     from adh.agents.openai_sql_agent import OpenAISQLAgent
     from adh.db.duckdb_runner import DuckDBRunner
@@ -43,8 +45,13 @@ def _run_single_mode(
     from adh.memory.store import CorrectiveMemory
 
     db_runner = DuckDBRunner(cfg.database.path)
+    gateway = None
     try:
-        gateway = SQLGateway(db_runner, cache_enabled=(run_mode != "raw"))
+        gateway = SQLGateway(
+            db_runner,
+            cache_enabled=(run_mode != "raw"),
+            cache_db_path=cache_db_path,
+        )
         memory_store = CorrectiveMemory(db_runner) if run_mode == "cached_memory" else None
 
         agent = OpenAISQLAgent(
@@ -63,9 +70,13 @@ def _run_single_mode(
             seed=seed,
             output_dir=output_dir,
             memory_store=memory_store,
+            repeat=repeat,
+            cache_db_path=cache_db_path,
         )
         return runner.run(tasks_file)
     finally:
+        if gateway is not None:
+            gateway.close()
         db_runner.close()
 
 
@@ -186,6 +197,14 @@ def run(
         int | None,
         typer.Option("--seed", help="Random seed"),
     ] = None,
+    repeat: Annotated[
+        int,
+        typer.Option("--repeat", min=1, help="Run each task N times in sequence"),
+    ] = 1,
+    cache_db: Annotated[
+        str | None,
+        typer.Option("--cache-db", help="Path to file-backed cache DuckDB"),
+    ] = None,
 ):
     """Run benchmark tasks against the agent."""
     cfg: HarnessConfig = ctx.obj["config"]
@@ -202,6 +221,9 @@ def run(
     console.print(f"  Mode:  {_display_mode(run_mode)}")
     console.print(f"  Model: {cfg.agent.model}")
     console.print(f"  Seed:  {s}")
+    console.print(f"  Repeat: {repeat}")
+    if cache_db:
+        console.print(f"  Cache DB: {cache_db}")
 
     if run_mode not in ("raw", "cached", "cached_memory", "all"):
         console.print(
@@ -222,6 +244,8 @@ def run(
                 output_dir=out_dir,
                 max_steps=steps,
                 seed=s,
+                repeat=repeat,
+                cache_db_path=cache_db,
             )
 
         comparison_dir = Path(out_dir) / (
@@ -244,6 +268,8 @@ def run(
         output_dir=out_dir,
         max_steps=steps,
         seed=s,
+        repeat=repeat,
+        cache_db_path=cache_db,
     )
 
     if summary.get("results"):

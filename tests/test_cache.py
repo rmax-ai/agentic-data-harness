@@ -77,3 +77,23 @@ class TestQueryCache:
         cache.clear()
         stats = cache.stats()
         assert stats["total_entries"] == 0
+
+    def test_file_backed_cache_persists_across_instances(self, tmp_path: Path):
+        runner_db_path = tmp_path / "runner.db"
+        cache_db_path = tmp_path / "cache.db"
+
+        runner = DuckDBRunner(runner_db_path)
+        cache = QueryCache(runner, cache_db_path=cache_db_path)
+        cache.put("persisted", "SELECT 1", result_rows=[(1,)], row_count=1)
+        cache.close()
+        runner.close()
+
+        new_runner = DuckDBRunner(runner_db_path)
+        new_cache = QueryCache(new_runner, cache_db_path=cache_db_path)
+        result = new_cache.get("persisted")
+
+        assert result is not None
+        assert result["row_count"] == 1
+
+        new_cache.close()
+        new_runner.close()

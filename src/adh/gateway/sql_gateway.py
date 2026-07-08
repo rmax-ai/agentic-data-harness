@@ -13,6 +13,8 @@ from adh.gateway.fingerprint import compute_fingerprints
 from adh.gateway.why_not import build_why_not_feedback
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from adh.db.duckdb_runner import DuckDBRunner
 
 
@@ -44,10 +46,11 @@ class SQLGateway:
         self,
         runner: DuckDBRunner,
         cache_enabled: bool = False,
+        cache_db_path: str | Path | None = None,
     ):
         self._runner = runner
         self.cache_enabled = cache_enabled
-        self._cache = QueryCache(runner) if cache_enabled else None
+        self._cache = QueryCache(runner, cache_db_path=cache_db_path) if cache_enabled else None
 
     def execute(self, sql: str) -> SQLResult:
         """Validate, fingerprint, check cache, and execute a SQL query."""
@@ -169,6 +172,11 @@ class SQLGateway:
         """Clear the query cache."""
         if self._cache is not None:
             self._cache.clear()
+
+    def close(self):
+        """Close any owned cache connection."""
+        if self._cache is not None:
+            self._cache.close()
 
     def get_schema_summary(self) -> str:
         return self._runner.get_schema_summary()

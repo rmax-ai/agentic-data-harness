@@ -22,27 +22,45 @@ def test_generate_comparison_report_writes_markdown_and_json(tmp_path: Path) -> 
         tmp_path=tmp_path,
         mode="cached",
         results=[
-            _result("task_1", True, 2, 1),
-            _result("task_2", True, 3, 1),
+            _result("task_1", True, 2, 1, cache_statuses=["miss"]),
+            _result("task_1", True, 1, 1, cache_statuses=["hit"]),
+            _result("task_2", True, 3, 1, cache_statuses=["miss"]),
         ],
         trace_events=[
-            {"event_type": "cache_hit", "extra": {}},
-            {"event_type": "cache_miss", "extra": {}},
+            {"task_id": "task_1", "event_type": "cache_hit", "extra": {}},
+            {"task_id": "task_1", "event_type": "cache_miss", "extra": {}},
+            {"task_id": "task_2", "event_type": "cache_miss", "extra": {}},
         ],
     )
     memory_path = _write_run(
         tmp_path=tmp_path,
         mode="cached_memory",
         results=[
-            _result("task_1", True, 1, 1, retrieved_memory_ids=["mem_1"]),
-            _result("task_2", True, 2, 1, retrieved_memory_ids=[]),
+            _result(
+                "task_1",
+                True,
+                1,
+                1,
+                retrieved_memory_ids=["mem_1"],
+                cache_statuses=["miss"],
+            ),
+            _result(
+                "task_1",
+                True,
+                1,
+                1,
+                retrieved_memory_ids=["mem_1"],
+                cache_statuses=["hit"],
+            ),
+            _result("task_2", True, 2, 1, retrieved_memory_ids=[], cache_statuses=["hit"]),
         ],
         trace_events=[
-            {"event_type": "cache_hit", "extra": {}},
-            {"event_type": "cache_hit", "extra": {}},
-            {"event_type": "cache_miss", "extra": {}},
-            {"event_type": "memory_retrieved", "extra": {"count": 1}},
-            {"event_type": "memory_retrieved", "extra": {"count": 0}},
+            {"task_id": "task_1", "event_type": "cache_hit", "extra": {}},
+            {"task_id": "task_1", "event_type": "cache_hit", "extra": {}},
+            {"task_id": "task_1", "event_type": "cache_miss", "extra": {}},
+            {"task_id": "task_1", "event_type": "memory_retrieved", "extra": {"count": 1}},
+            {"task_id": "task_1", "event_type": "memory_retrieved", "extra": {"count": 1}},
+            {"task_id": "task_2", "event_type": "memory_retrieved", "extra": {"count": 0}},
         ],
     )
 
@@ -59,9 +77,11 @@ def test_generate_comparison_report_writes_markdown_and_json(tmp_path: Path) -> 
 
     assert Path(report["markdown_path"]).exists()
     assert Path(report["json_path"]).exists()
-    assert "| cached-memory | 2/2 (100.0%) | 1.50 | 1.00 | 66.7% | 50.0% |" in markdown
-    assert payload["comparison"]["cached"]["cache_hit_rate"] == 0.5
-    assert payload["comparison"]["cached_memory"]["memory_hit_rate"] == 0.5
+    assert "| cached-memory | 3/3 (100.0%) | 1.33 | 1.00 | 66.7% | 66.7% |" in markdown
+    assert "### cached" in markdown
+    assert "| task_1 | 2 | 100.0% | 50.0% (1/2) | 0.0% (0/0) |" in markdown
+    assert payload["comparison"]["cached"]["cache_hit_rate"] == 1 / 3
+    assert payload["comparison"]["cached_memory"]["memory_hit_rate"] == 2 / 3
     assert payload["comparison"]["raw"]["avg_steps"] == 3.0
 
 
@@ -131,11 +151,22 @@ def _result(
     steps: int,
     query_count: int,
     retrieved_memory_ids: list[str] | None = None,
+    cache_statuses: list[str] | None = None,
 ) -> dict:
     return {
         "task_id": task_id,
         "steps": steps,
-        "query_history": [{"sql": f"SELECT {index + 1}"} for index in range(query_count)],
+        "query_history": [
+            {
+                "sql": f"SELECT {index + 1}",
+                **(
+                    {"cache_status": cache_statuses[index]}
+                    if cache_statuses is not None and index < len(cache_statuses)
+                    else {}
+                ),
+            }
+            for index in range(query_count)
+        ],
         "evaluation": {"correct": correct, "reason": "test"},
         "retrieved_memory_ids": retrieved_memory_ids or [],
     }

@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from adh.db.duckdb_runner import DuckDBRunner
+
 if TYPE_CHECKING:
-    from adh.db.duckdb_runner import DuckDBRunner
+    from pathlib import Path
 
 CACHE_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS query_cache (
@@ -25,19 +27,25 @@ CREATE TABLE IF NOT EXISTS query_cache (
 class QueryCache:
     """Fingerprint-based query result cache."""
 
-    def __init__(self, runner: DuckDBRunner):
+    def __init__(
+        self,
+        runner: DuckDBRunner,
+        cache_db_path: str | Path | None = None,
+    ):
         self._runner = runner
+        self._cache_runner = DuckDBRunner(cache_db_path) if cache_db_path is not None else runner
+        self._owns_cache_runner = cache_db_path is not None
         self._init_table()
 
     def _init_table(self):
-        self._runner.execute_script(CACHE_TABLE_DDL)
+        self._cache_runner.execute_script(CACHE_TABLE_DDL)
 
     def get(self, fingerprint: str) -> dict[str, Any] | None:
         """Look up a cached result by fingerprint.
 
         Returns None if not found.
         """
-        rows = self._runner.execute(
+        rows = self._cache_runner.execute(
             "SELECT result_json, error_json, row_count, latency_ms, hit_count "
             "FROM query_cache WHERE fingerprint = ?",
             [fingerprint],
@@ -48,7 +56,7 @@ class QueryCache:
         result_json, error_json, row_count, latency_ms, hit_count = rows[0]
 
         # Increment hit count
-        self._runner.execute(
+        self._cache_runner.execute(
             "UPDATE query_cache SET hit_count = hit_count + 1 WHERE fingerprint = ?",
             [fingerprint],
         )
@@ -85,7 +93,7 @@ class QueryCache:
                 }
             )
 
-        self._runner.execute(
+        self._cache_runner.execute(
             """INSERT OR REPLACE INTO query_cache
             (fingerprint, normalized_sql, result_json, error_json, row_count, latency_ms)
             VALUES (?, ?, ?, ?, ?, ?)""",
@@ -94,7 +102,7 @@ class QueryCache:
 
     def stats(self) -> dict[str, Any]:
         """Return cache statistics."""
-        rows = self._runner.execute(
+        rows = self._cache_runner.execute(
             "SELECT COUNT(*) AS total, SUM(hit_count) AS hits FROM query_cache"
         )
         total = rows[0][0] if rows else 0
@@ -107,4 +115,9 @@ class QueryCache:
 
     def clear(self):
         """Clear the entire cache."""
-        self._runner.execute("DELETE FROM query_cache")
+        self._cache_runner.execute("DELETE FROM query_cache")
+
+    def close(self):
+        """Close the owned cache connection, if any."""
+        if self._owns_cache_runner:
+            self._cache_runner.close()

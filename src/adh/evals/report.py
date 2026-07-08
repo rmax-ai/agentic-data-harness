@@ -119,6 +119,7 @@ def _load_results(source: str | Path | dict[str, Any]) -> dict[str, Any]:
 def _build_mode_summary(data: dict[str, Any]) -> dict[str, Any]:
     metrics = compute_metrics(data.get("results", []))
     trace_metrics = _trace_metrics(data)
+    per_task_stats = _get_per_task_stats(data)
     return {
         "mode": _normalize_mode(data.get("mode")),
         "success_count": metrics.get("success_count", 0),
@@ -132,6 +133,7 @@ def _build_mode_summary(data: dict[str, Any]) -> dict[str, Any]:
         "memory_hit_rate": trace_metrics["memory_hit_rate"],
         "memory_hits": trace_metrics["memory_hits"],
         "memory_retrievals": trace_metrics["memory_retrievals"],
+        "per_task_stats": per_task_stats,
     }
 
 
@@ -210,6 +212,38 @@ def _build_markdown_report(
         for mode in ("raw", "cached", "cached_memory")
     )
     lines.append("")
+
+    lines.extend(
+        [
+            "## Per-task hit rates",
+            "",
+            "Cache and memory rates below are aggregated across repeats for each task ID.",
+            "",
+        ]
+    )
+
+    for mode in ("raw", "cached", "cached_memory"):
+        lines.extend(
+            [
+                f"### {_display_mode(mode)}",
+                "",
+                "| Task | Repeats | Success Rate | Cache Hit Rate | Memory Hit Rate |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        per_task_stats = comparison[mode].get("per_task_stats", {})
+        for task_id, stats in sorted(per_task_stats.items()):
+            lines.append(
+                "| "
+                f"{task_id} | "
+                f"{stats['repeats']} | "
+                f"{stats['success_rate']:.1%} | "
+                f"{stats['cache_hit_rate']:.1%} "
+                f"({stats['cache_hits']}/{stats['cache_hits'] + stats['cache_misses']}) | "
+                f"{stats['memory_hit_rate']:.1%} "
+                f"({stats['memory_hits']}/{stats['memory_retrievals']}) |"
+            )
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -242,3 +276,100 @@ def _normalize_mode(mode: Any) -> str:
 
 def _display_mode(mode: str) -> str:
     return mode.replace("_", "-")
+
+
+def _get_per_task_stats(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    existing = data.get("per_task_stats")
+    if isinstance(existing, dict) and existing:
+        return existing
+    return _derive_per_task_stats(data)
+
+
+def _derive_per_task_stats(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    mode = _normalize_mode(data.get("mode"))
+    per_task: dict[str, dict[str, Any]] = {}
+
+    for result in data.get("results", []):
+        task_id = result.get("task_id")
+        if not task_id:
+            continue
+
+        stats = per_task.setdefault(
+            task_id,
+            {
+                "task_id": task_id,
+                "domain": result.get("domain"),
+                "repeats": 0,
+                "successes": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "memory_hits": 0,
+                "memory_retrievals": 0,
+            },
+        )
+        stats["repeats"] += 1
+        if result.get("evaluation", {}).get("correct", False):
+            stats["successes"] += 1
+
+        for query in result.get("query_history", []):
+            cache_status = query.get("cache_status")
+            if cache_status == "hit":
+                stats["cache_hits"] += 1
+            elif cache_status == "miss":
+                stats["cache_misses"] += 1
+
+        if mode == "cached_memory":
+            stats["memory_retrievals"] += 1
+            if result.get("retrieved_memory_ids"):
+                stats["memory_hits"] += 1
+
+    trace_path = data.get("trace_path")
+    if trace_path and Path(trace_path).exists():
+        traced_cache = any(
+            stats["cache_hits"] or stats["cache_misses"] for stats in per_task.values()
+        )
+        traced_memory = any(stats["memory_retrievals"] for stats in per_task.values())
+        if not traced_cache or (mode == "cached_memory" and not traced_memory):
+            for line in Path(trace_path).read_text().splitlines():
+                if not line.strip():
+                    continue
+                event = json.loads(line)
+                task_id = event.get("task_id")
+                if not task_id:
+                    continue
+                stats = per_task.setdefault(
+                    task_id,
+                    {
+                        "task_id": task_id,
+                        "domain": None,
+                        "repeats": 0,
+                        "successes": 0,
+                        "cache_hits": 0,
+                        "cache_misses": 0,
+                        "memory_hits": 0,
+                        "memory_retrievals": 0,
+                    },
+                )
+                event_type = event.get("event_type")
+                if event_type == "cache_hit" and not traced_cache:
+                    stats["cache_hits"] += 1
+                elif event_type == "cache_miss" and not traced_cache:
+                    stats["cache_misses"] += 1
+                elif (
+                    event_type == "memory_retrieved"
+                    and mode == "cached_memory"
+                    and not traced_memory
+                ):
+                    stats["memory_retrievals"] += 1
+                    extra = event.get("extra") or {}
+                    if int(extra.get("count", 0)) > 0:
+                        stats["memory_hits"] += 1
+
+    for stats in per_task.values():
+        cache_total = stats["cache_hits"] + stats["cache_misses"]
+        memory_total = stats["memory_retrievals"]
+        stats["cache_hit_rate"] = stats["cache_hits"] / cache_total if cache_total else 0.0
+        stats["memory_hit_rate"] = stats["memory_hits"] / memory_total if memory_total else 0.0
+        stats["success_rate"] = stats["successes"] / stats["repeats"] if stats["repeats"] else 0.0
+
+    return dict(sorted(per_task.items()))

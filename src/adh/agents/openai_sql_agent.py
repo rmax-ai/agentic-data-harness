@@ -151,6 +151,8 @@ class OpenAISQLAgent:
                     "thought": thought,
                     "sql": sql,
                     "success": result.success,
+                    "cache_status": cache_status,
+                    "latency_ms": result.latency_ms,
                 }
 
                 if result.success:

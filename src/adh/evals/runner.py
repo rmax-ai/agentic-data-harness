@@ -38,6 +38,8 @@ class BenchmarkRunner:
         seed: int = 42,
         output_dir: str = "reports",
         memory_store: CorrectiveMemory | None = None,
+        repeat: int = 1,
+        cache_db_path: str | None = None,
     ):
         self.agent = agent
         self._db = db_runner
@@ -46,6 +48,8 @@ class BenchmarkRunner:
         self.seed = seed
         self.output_dir = Path(output_dir)
         self._memory_store = memory_store
+        self.repeat = repeat
+        self.cache_db_path = cache_db_path
 
     def run(self, tasks_path: str) -> dict[str, Any]:
         """Run all tasks from a YAML file and return the saved summary payload."""
@@ -74,70 +78,84 @@ class BenchmarkRunner:
 
         results = []
         success_count = 0
+        total_executions = len(tasks) * self.repeat
 
-        console.print(f"\n[bold]Benchmark Run[/] [{self.mode}] — {len(tasks)} tasks")
+        console.print(
+            f"\n[bold]Benchmark Run[/] [{self.mode}] — "
+            f"{len(tasks)} tasks x {self.repeat} repeats = {total_executions} executions"
+        )
         console.print(f"Run ID: {run_id}\n")
 
-        for i, task in enumerate(tasks, 1):
+        execution_index = 0
+        for task in tasks:
             task_id = task["id"]
             question = task["question"]
             expected = task.get("expected_answer", {})
             domain = task.get("domain")
 
-            console.print(f"  [{i}/{len(tasks)}] {task_id}: {question[:80]}...")
-
-            result = self.agent.solve(
-                task_id=task_id,
-                question=question,
-                run_id=run_id,
-                mode=self.mode,
-                domain=domain,
-            )
-
-            # Evaluate answer
-            evaluation = self._evaluate_answer(result.get("answer"), expected, task)
-            result["evaluation"] = evaluation
-            result["domain"] = domain
-
-            used_memory_ids: list[str] = []
-            if evaluation.get("correct", False) and self._memory_store is not None:
-                used_memory_ids = _unique_memory_ids(
-                    [
-                        *result.get("retrieved_memory_ids", []),
-                        *result.get("created_memory_ids", []),
-                    ]
+            for repeat_index in range(1, self.repeat + 1):
+                execution_index += 1
+                console.print(
+                    f"  [{execution_index}/{total_executions}] "
+                    f"{task_id} (repeat {repeat_index}/{self.repeat}): {question[:80]}..."
                 )
-                for memory_id in used_memory_ids:
-                    self._memory_store.mark_success(memory_id)
-            result["used_memory_ids"] = used_memory_ids
 
-            if evaluation.get("correct", False):
-                success_count += 1
-                console.print(f"    [green]PASS[/] — {result.get('steps', '?')} steps")
-            elif evaluation.get("correct") is None:
-                console.print(f"    [yellow]SKIP[/] — {evaluation.get('reason', 'unknown')}")
-            else:
-                console.print(f"    [red]FAIL[/] — {evaluation.get('reason', 'unknown')}")
-
-            trace_store.record(
-                TraceEvent(
-                    run_id=run_id,
+                result = self.agent.solve(
                     task_id=task_id,
+                    question=question,
+                    run_id=run_id,
                     mode=self.mode,
-                    step=result.get("steps", 0),
-                    event_type=EventType.TASK_COMPLETE,
-                    model=self.agent.model_config.model,
-                    success=bool(evaluation.get("correct", False)),
-                    error_type=None
-                    if evaluation.get("correct", False)
-                    else evaluation.get("reason"),
-                    extra={
-                        "evaluation": evaluation,
-                        "used_memory_ids": used_memory_ids,
-                    },
+                    domain=domain,
                 )
-            )
-            results.append(result)
+
+                # Evaluate answer
+                evaluation = self._evaluate_answer(result.get("answer"), expected, task)
+                result["evaluation"] = evaluation
+                result["domain"] = domain
+                result["repeat_index"] = repeat_index
+                result["repeat_count"] = self.repeat
+
+                used_memory_ids: list[str] = []
+                if evaluation.get("correct", False) and self._memory_store is not None:
+                    used_memory_ids = _unique_memory_ids(
+                        [
+                            *result.get("retrieved_memory_ids", []),
+                            *result.get("created_memory_ids", []),
+                        ]
+                    )
+                    for memory_id in used_memory_ids:
+                        self._memory_store.mark_success(memory_id)
+                result["used_memory_ids"] = used_memory_ids
+
+                if evaluation.get("correct", False):
+                    success_count += 1
+                    console.print(f"    [green]PASS[/] — {result.get('steps', '?')} steps")
+                elif evaluation.get("correct") is None:
+                    console.print(f"    [yellow]SKIP[/] — {evaluation.get('reason', 'unknown')}")
+                else:
+                    console.print(f"    [red]FAIL[/] — {evaluation.get('reason', 'unknown')}")
+
+                trace_store.record(
+                    TraceEvent(
+                        run_id=run_id,
+                        task_id=task_id,
+                        mode=self.mode,
+                        step=result.get("steps", 0),
+                        event_type=EventType.TASK_COMPLETE,
+                        model=self.agent.model_config.model,
+                        success=bool(evaluation.get("correct", False)),
+                        error_type=None
+                        if evaluation.get("correct", False)
+                        else evaluation.get("reason"),
+                        extra={
+                            "evaluation": evaluation,
+                            "used_memory_ids": used_memory_ids,
+                            "repeat_index": repeat_index,
+                            "repeat_count": self.repeat,
+                        },
+                    )
+                )
+                results.append(result)
 
         cache_stats = self._gateway.cache_stats()
         memory_stats = (
@@ -152,13 +170,17 @@ class BenchmarkRunner:
             "run_id": run_id,
             "mode": self.mode,
             "seed": self.seed,
-            "total_tasks": len(tasks),
+            "repeat_count": self.repeat,
+            "unique_task_count": len(tasks),
+            "total_tasks": len(results),
             "success_count": success_count,
-            "success_rate": success_count / len(tasks) if tasks else 0,
+            "success_rate": success_count / len(results) if results else 0,
             "result_path": str(result_path),
             "trace_path": str(trace_path),
+            "cache_db_path": self.cache_db_path,
             "cache_stats": cache_stats,
             "memory_stats": memory_stats,
+            "per_task_stats": _build_per_task_stats(results, self.mode),
             "results": results,
         }
         with open(result_path, "w") as f:
@@ -169,7 +191,8 @@ class BenchmarkRunner:
             json.dump(summary, f, indent=2)
 
         console.print(
-            f"\n[bold]Summary:[/] {success_count}/{len(tasks)} ({success_count / len(tasks) * 100:.1f}%)"
+            f"\n[bold]Summary:[/] {success_count}/{len(results)} "
+            f"({success_count / len(results) * 100:.1f}%)"
         )
         console.print(f"[dim]Results saved to: {result_path}[/]")
         console.print(f"[dim]Result alias: {alias_path}[/]")
@@ -301,3 +324,50 @@ def _unique_memory_ids(memory_ids: list[str]) -> list[str]:
             seen.add(memory_id)
             deduped.append(memory_id)
     return deduped
+
+
+def _build_per_task_stats(results: list[dict[str, Any]], mode: str) -> dict[str, dict[str, Any]]:
+    per_task: dict[str, dict[str, Any]] = {}
+
+    for result in results:
+        task_id = result.get("task_id")
+        if not task_id:
+            continue
+
+        stats = per_task.setdefault(
+            task_id,
+            {
+                "task_id": task_id,
+                "domain": result.get("domain"),
+                "repeats": 0,
+                "successes": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "memory_hits": 0,
+                "memory_retrievals": 0,
+            },
+        )
+        stats["repeats"] += 1
+        if result.get("evaluation", {}).get("correct", False):
+            stats["successes"] += 1
+
+        for query in result.get("query_history", []):
+            cache_status = query.get("cache_status")
+            if cache_status == "hit":
+                stats["cache_hits"] += 1
+            elif cache_status == "miss":
+                stats["cache_misses"] += 1
+
+        if mode == "cached_memory":
+            stats["memory_retrievals"] += 1
+            if result.get("retrieved_memory_ids"):
+                stats["memory_hits"] += 1
+
+    for stats in per_task.values():
+        cache_total = stats["cache_hits"] + stats["cache_misses"]
+        memory_total = stats["memory_retrievals"]
+        stats["cache_hit_rate"] = stats["cache_hits"] / cache_total if cache_total else 0.0
+        stats["memory_hit_rate"] = stats["memory_hits"] / memory_total if memory_total else 0.0
+        stats["success_rate"] = stats["successes"] / stats["repeats"] if stats["repeats"] else 0.0
+
+    return dict(sorted(per_task.items()))
