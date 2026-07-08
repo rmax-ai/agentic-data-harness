@@ -1,0 +1,321 @@
+# Small benchmark task set (15 tasks)
+# Generated for agentic-data-harness
+# 
+# Each task has an 'expected_answer.sql' that is executed against the
+# generated DuckDB database to verify correctness. Use:
+#   adh check-task <task_id>
+# to verify individual tasks.
+#
+# Intentional traps across domains:
+# - country_code (not country names)
+# - total_cents (not total_amount/revenue)
+# - account_id (not customer_id in tickets)
+# - plan_code (not plan names)
+# - String timestamps
+
+tasks:
+
+  # ── Sales Analytics ──
+
+  - id: sales_001
+    domain: sales_analytics
+    question: "What was the total net revenue in euros from Dutch customers in Q1 2026?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT
+          (COALESCE(SUM(o.total_cents), 0) - COALESCE(SUM(r.refund_cents), 0)) / 100.0 AS net_revenue_eur
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        LEFT JOIN refunds r ON o.order_id = r.order_id
+        WHERE c.country_code = 'NL'
+          AND o.order_date >= '2026-01-01'
+          AND o.order_date <= '2026-03-31'
+          AND o.status = 'completed'
+    required_concepts:
+      - join customers to orders on customer_id
+      - filter country_code = 'NL'
+      - subtract refunds
+      - divide cents by 100
+    difficulty: medium
+
+  - id: sales_002
+    domain: sales_analytics
+    question: "How many completed orders were placed by German customers?"
+    expected_answer:
+      type: numeric
+      value: 0
+      tolerance: 0
+      sql: |
+        SELECT COUNT(*) AS order_count
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        WHERE c.country_code = 'DE' AND o.status = 'completed'
+    required_concepts:
+      - join customers to orders
+      - filter by country_code = 'DE'
+      - filter by status = completed
+    difficulty: easy
+
+  - id: sales_003
+    domain: sales_analytics
+    question: "Which country had the highest total gross order value (in euros)?"
+    expected_answer:
+      type: exact
+      value: "??"
+      tolerance: 0
+      sql: |
+        SELECT c.country_code, SUM(o.total_cents) / 100.0 AS total_eur
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        WHERE o.status = 'completed'
+        GROUP BY c.country_code
+        ORDER BY total_eur DESC
+        LIMIT 1
+    required_concepts:
+      - group by country_code
+      - sum and divide by 100
+      - order by descending
+    difficulty: medium
+
+  - id: sales_004
+    domain: sales_analytics
+    question: "What is the average refund amount in euros per refunded order?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT AVG(r.refund_cents) / 100.0 AS avg_refund_eur
+        FROM refunds r
+        JOIN orders o ON r.order_id = o.order_id
+    required_concepts:
+      - aggregate AVG on refund_cents
+      - divide cents by 100
+    difficulty: easy
+
+  - id: sales_005
+    domain: sales_analytics
+    question: "How many enterprise customers placed orders in Q2 2026?"
+    expected_answer:
+      type: numeric
+      value: 0
+      tolerance: 0
+      sql: |
+        SELECT COUNT(DISTINCT c.customer_id) AS customer_count
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        WHERE c.segment = 'enterprise'
+          AND o.order_date >= '2026-04-01'
+          AND o.order_date <= '2026-06-30'
+    required_concepts:
+      - count distinct
+      - filter by segment = enterprise
+      - date range Q2 2026
+    difficulty: medium
+
+  - id: sales_006
+    domain: sales_analytics
+    question: "What is the gross revenue in euros from Spanish customers who are in the midmarket segment?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT COALESCE(SUM(o.total_cents), 0) / 100.0 AS gross_revenue_eur
+        FROM customers c
+        JOIN orders o ON c.customer_id = o.customer_id
+        WHERE c.country_code = 'ES' AND c.segment = 'midmarket' AND o.status = 'completed'
+    required_concepts:
+      - join customers to orders
+      - filter by country_code and segment
+      - divide cents by 100
+      - trap: total_cents not total_amount
+    difficulty: medium
+
+  - id: sales_007
+    domain: sales_analytics
+    question: "What percentage of orders resulted in a refund?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT
+          (SELECT COUNT(DISTINCT order_id) FROM refunds) * 100.0 /
+          NULLIF((SELECT COUNT(*) FROM orders), 0) AS refund_pct
+    required_concepts:
+      - subquery for counts
+      - percentage calculation
+      - trap: count distinct order_ids
+    difficulty: hard
+
+  # ── Support Tickets ──
+
+  - id: support_001
+    domain: support_tickets
+    question: "How many P0 tickets were created by enterprise accounts?"
+    expected_answer:
+      type: numeric
+      value: 0
+      tolerance: 0
+      sql: |
+        SELECT COUNT(*) AS ticket_count
+        FROM tickets t
+        JOIN accounts a ON t.account_id = a.account_id
+        WHERE t.priority = 'P0' AND a.segment = 'enterprise'
+    required_concepts:
+      - join tickets to accounts on account_id
+      - filter by priority and segment
+      - trap: account_id not customer_id
+    difficulty: easy
+
+  - id: support_002
+    domain: support_tickets
+    question: "What is the average satisfaction score for resolved tickets in each category?"
+    expected_answer:
+      type: exact
+      value: "??"
+      tolerance: 0
+      sql: |
+        SELECT t.category, AVG(t.satisfaction_score) AS avg_score
+        FROM tickets t
+        WHERE t.resolved_at IS NOT NULL AND t.satisfaction_score IS NOT NULL
+        GROUP BY t.category
+        ORDER BY avg_score DESC
+    required_concepts:
+      - filter non-null resolved_at and satisfaction_score
+      - group by category
+      - aggregate AVG
+    difficulty: medium
+
+  - id: support_003
+    domain: support_tickets
+    question: "Which account segment has the highest number of unresolved tickets?"
+    expected_answer:
+      type: exact
+      value: "??"
+      tolerance: 0
+      sql: |
+        SELECT a.segment, COUNT(*) AS unresolved
+        FROM tickets t
+        JOIN accounts a ON t.account_id = a.account_id
+        WHERE t.resolved_at IS NULL
+        GROUP BY a.segment
+        ORDER BY unresolved DESC
+        LIMIT 1
+    required_concepts:
+      - join tickets to accounts
+      - filter unresolved (resolved_at IS NULL)
+      - group by segment
+    difficulty: medium
+
+  - id: support_004
+    domain: support_tickets
+    question: "What percentage of all tickets are billing-related?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT 
+          (SELECT COUNT(*) FROM tickets WHERE category = 'billing') * 100.0 / 
+          NULLIF((SELECT COUNT(*) FROM tickets), 0) AS billing_pct
+    required_concepts:
+      - filter by category
+      - percentage calculation
+    difficulty: easy
+
+  - id: support_005
+    domain: support_tickets
+    question: "How many tickets were created each month in 2026?"
+    expected_answer:
+      type: exact
+      value: "??"
+      tolerance: 0
+      sql: |
+        SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS ticket_count
+        FROM tickets
+        WHERE created_at >= '2026-01-01'
+        GROUP BY month
+        ORDER BY month
+    required_concepts:
+      - string date extraction (trap: not a real DATE type)
+      - group by month
+      - substring for YYYY-MM
+    difficulty: medium
+
+  # ── Product Usage ──
+
+  - id: product_001
+    domain: product_usage
+    question: "How many events did pro-plan users generate in the last 30 days?"
+    expected_answer:
+      type: numeric
+      value: 0
+      tolerance: 0
+      sql: |
+        SELECT COUNT(*) AS event_count
+        FROM events e
+        JOIN users u ON e.user_id = u.user_id
+        WHERE u.plan_code = 'pro'
+          AND e.event_ts >= '2026-05-01'
+    required_concepts:
+      - join events to users
+      - filter by plan_code = 'pro'
+      - filter by date range
+    difficulty: easy
+
+  - id: product_002
+    domain: product_usage
+    question: "Which feature has the highest average event duration?"
+    expected_answer:
+      type: exact
+      value: "??"
+      tolerance: 0
+      sql: |
+        SELECT e.feature, AVG(e.duration_ms) AS avg_duration
+        FROM events e
+        WHERE e.feature IS NOT NULL
+        GROUP BY e.feature
+        ORDER BY avg_duration DESC
+        LIMIT 1
+    required_concepts:
+      - group by feature
+      - aggregate AVG on duration_ms
+    difficulty: easy
+
+  - id: product_003
+    domain: product_usage
+    question: "How many distinct users triggered a 'run_analysis' event?"
+    expected_answer:
+      type: numeric
+      value: 0
+      tolerance: 0
+      sql: |
+        SELECT COUNT(DISTINCT user_id) AS user_count
+        FROM events
+        WHERE event_name = 'run_analysis'
+    required_concepts:
+      - count distinct user_id
+      - filter by event_name
+    difficulty: easy
+
+  - id: product_004
+    domain: product_usage
+    question: "What percentage of users are on the enterprise plan?"
+    expected_answer:
+      type: numeric
+      value: 0.0
+      tolerance: 0.01
+      sql: |
+        SELECT 
+          (SELECT COUNT(*) FROM users WHERE plan_code = 'ent') * 100.0 / 
+          NULLIF((SELECT COUNT(*) FROM users), 0) AS ent_pct
+    required_concepts:
+      - filter by plan_code
+      - percentage calculation
+      - trap: plan_code not plan name
+    difficulty: easy

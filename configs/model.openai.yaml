@@ -1,0 +1,17 @@
+# OpenAI model configurations
+
+# Default benchmark model
+default:
+  provider: openai
+  model: gpt-5.4-mini
+  temperature: 0
+  max_output_tokens: 1200
+  timeout_seconds: 60
+
+# Smoke-test model (cheapest, for dev checks)
+smoke:
+  provider: openai
+  model: gpt-5.4-nano
+  temperature: 0
+  max_output_tokens: 800
+  timeout_seconds: 60

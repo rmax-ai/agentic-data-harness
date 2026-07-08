@@ -1,0 +1,18 @@
+# Small benchmark config (15 tasks)
+run:
+  tasks: "tasks/small.yaml"
+  seed: 42
+
+agent:
+  max_steps: 8
+  model: "gpt-5.4-mini"
+  temperature: 0
+  max_output_tokens: 1200
+  timeout_seconds: 60
+
+database:
+  path: "data/duckdb/benchmark.db"
+
+cache:
+  enabled: false
+  memory_items_limit: 3
