@@ -12,7 +12,7 @@ from openai import OpenAI
 
 from adh.agents.prompts import SYSTEM_PROMPT_RAW, USER_MESSAGE_TEMPLATE
 from adh.agents.schemas import AgentAction
-from adh.config import ModelConfig, get_api_key
+from adh.config import ModelConfig
 from adh.db.duckdb_runner import DuckDBRunner
 from adh.gateway.sql_gateway import SQLGateway, SQLResult
 from adh.tracing.events import EventType, TraceEvent, TraceStore
@@ -37,7 +37,7 @@ class OpenAISQLAgent:
         self._trace = trace_store
         self._memory = memory_items or []
 
-        api_key = get_api_key()
+        api_key = os.getenv("OPENAI_API_KEY") or ""
         if not api_key:
             raise ValueError(
                 "OPENAI_API_KEY not set. Set it via environment variable or .env file."

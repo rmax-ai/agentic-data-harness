@@ -90,26 +90,3 @@ def load_config(
         config.run.mode = mode
 
     return config
-
-
-def get_api_key() -> str:
-    """Get OpenAI API key from environment or pass store."""
-    key = os.getenv("OPENAI_API_KEY", "")
-    if key:
-        return key
-
-    # Try pass store
-    try:
-        import subprocess
-        pass_dir = os.path.expanduser("~/.hermes/.password-store")
-        env = {**os.environ, "PASSWORD_STORE_DIR": pass_dir}
-        result = subprocess.run(
-            ["pass", "hermes/openai/api-key"],
-            capture_output=True, text=True, timeout=10, env=env,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-
-    return ""
