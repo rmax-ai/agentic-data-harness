@@ -244,13 +244,15 @@ tasks:
   difficulty: medium
 - id: product_001
   domain: product_usage
-  question: How many events did pro-plan users generate in the last 30 days?
+  question: Using benchmark date 2026-06-30, how many events did pro-plan users generate
+    in the last 30 days?
   expected_answer:
     type: numeric
-    value: 190
+    value: 111
     tolerance: 0
     sql: "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id\
-      \ = u.user_id\nWHERE u.plan_code = 'pro'\n  AND e.event_ts >= '2026-05-01'\n"
+      \ = u.user_id\nWHERE u.plan_code = 'pro'\n  AND CAST(e.event_ts AS TIMESTAMP)\
+      \ >= TIMESTAMP '2026-06-30 00:00:00' - INTERVAL 30 DAY\n"
   required_concepts:
   - join events to users
   - filter by plan_code = 'pro'
@@ -1083,8 +1085,8 @@ tasks:
     sql: "SELECT ROUND(\n  COUNT(*) * 100.0\n  / NULLIF((\n    SELECT COUNT(*)\n \
       \   FROM events\n    WHERE event_ts >= '2026-05-01'\n      AND event_ts < '2026-06-01'\n\
       \  ), 0),\n  2\n)\nFROM events e\nJOIN users u ON e.user_id = u.user_id\nWHERE\
-      \ u.plan_code = 'free'\n  AND e.event_ts >= '2026-05-01'\n  AND e.event_ts <\
-      \ '2026-06-01'\n"
+      \ u.plan_code = 'free'\n  AND CAST(e.event_ts AS TIMESTAMP) >= TIMESTAMP '2026-06-30\
+      \ 00:00:00' - INTERVAL 30 DAY\n  AND e.event_ts < '2026-06-01'\n"
   required_concepts:
   - join events to users
   - filter by plan_code = free

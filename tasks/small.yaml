@@ -6,9 +6,11 @@ tasks:
     type: numeric
     value: 9559.47
     tolerance: 0.01
-    sql: "SELECT\n  (COALESCE(SUM(o.total_cents), 0) - COALESCE(SUM(r.refund_cents), 0)) / 100.0 AS net_revenue_eur\nFROM\
-      \ customers c\nJOIN orders o ON c.customer_id = o.customer_id\nLEFT JOIN refunds r ON o.order_id = r.order_id\nWHERE\
-      \ c.country_code = 'NL'\n  AND o.order_date >= '2026-01-01'\n  AND o.order_date <= '2026-03-31'\n  AND o.status = 'completed'\n"
+    sql: "SELECT\n  (COALESCE(SUM(o.total_cents), 0) - COALESCE(SUM(r.refund_cents),\
+      \ 0)) / 100.0 AS net_revenue_eur\nFROM customers c\nJOIN orders o ON c.customer_id\
+      \ = o.customer_id\nLEFT JOIN refunds r ON o.order_id = r.order_id\nWHERE c.country_code\
+      \ = 'NL'\n  AND o.order_date >= '2026-01-01'\n  AND o.order_date <= '2026-03-31'\n\
+      \  AND o.status = 'completed'\n"
   required_concepts:
   - join customers to orders on customer_id
   - filter country_code = 'NL'
@@ -88,8 +90,9 @@ tasks:
     type: numeric
     value: 21
     tolerance: 0
-    sql: "SELECT COUNT(DISTINCT c.customer_id) AS customer_count\nFROM customers c\nJOIN orders o ON c.customer_id = o.customer_id\n\
-      WHERE c.segment = 'enterprise'\n  AND o.order_date >= '2026-04-01'\n  AND o.order_date <= '2026-06-30'\n"
+    sql: "SELECT COUNT(DISTINCT c.customer_id) AS customer_count\nFROM customers c\n\
+      JOIN orders o ON c.customer_id = o.customer_id\nWHERE c.segment = 'enterprise'\n\
+      \  AND o.order_date >= '2026-04-01'\n  AND o.order_date <= '2026-06-30'\n"
   required_concepts:
   - count distinct
   - filter by segment = enterprise
@@ -97,7 +100,8 @@ tasks:
   difficulty: medium
 - id: sales_006
   domain: sales_analytics
-  question: What is the gross revenue in euros from Spanish customers who are in the midmarket segment?
+  question: What is the gross revenue in euros from Spanish customers who are in the
+    midmarket segment?
   expected_answer:
     type: numeric
     value: 12893.54
@@ -124,8 +128,8 @@ tasks:
     type: numeric
     value: 12.5
     tolerance: 0.01
-    sql: "SELECT\n  (SELECT COUNT(DISTINCT order_id) FROM refunds) * 100.0 /\n  NULLIF((SELECT COUNT(*) FROM orders), 0) AS\
-      \ refund_pct\n"
+    sql: "SELECT\n  (SELECT COUNT(DISTINCT order_id) FROM refunds) * 100.0 /\n  NULLIF((SELECT\
+      \ COUNT(*) FROM orders), 0) AS refund_pct\n"
   required_concepts:
   - subquery for counts
   - percentage calculation
@@ -209,8 +213,8 @@ tasks:
     type: numeric
     value: 12.0
     tolerance: 0.01
-    sql: "SELECT \n  (SELECT COUNT(*) FROM tickets WHERE category = 'billing') * 100.0 / \n  NULLIF((SELECT COUNT(*) FROM\
-      \ tickets), 0) AS billing_pct\n"
+    sql: "SELECT \n  (SELECT COUNT(*) FROM tickets WHERE category = 'billing') * 100.0\
+      \ / \n  NULLIF((SELECT COUNT(*) FROM tickets), 0) AS billing_pct\n"
   required_concepts:
   - filter by category
   - percentage calculation
@@ -240,13 +244,15 @@ tasks:
   difficulty: medium
 - id: product_001
   domain: product_usage
-  question: How many events did pro-plan users generate in the last 30 days?
+  question: Using benchmark date 2026-06-30, how many events did pro-plan users generate
+    in the last 30 days?
   expected_answer:
     type: numeric
-    value: 190
+    value: 111
     tolerance: 0
-    sql: "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id = u.user_id\nWHERE u.plan_code = 'pro'\n\
-      \  AND e.event_ts >= '2026-05-01'\n"
+    sql: "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id\
+      \ = u.user_id\nWHERE u.plan_code = 'pro'\n  AND CAST(e.event_ts AS TIMESTAMP)\
+      \ >= TIMESTAMP '2026-06-30 00:00:00' - INTERVAL 30 DAY\n"
   required_concepts:
   - join events to users
   - filter by plan_code = 'pro'
@@ -301,8 +307,8 @@ tasks:
     type: numeric
     value: 30.0
     tolerance: 0.01
-    sql: "SELECT \n  (SELECT COUNT(*) FROM users WHERE plan_code = 'ent') * 100.0 / \n  NULLIF((SELECT COUNT(*) FROM users),\
-      \ 0) AS ent_pct\n"
+    sql: "SELECT \n  (SELECT COUNT(*) FROM users WHERE plan_code = 'ent') * 100.0\
+      \ / \n  NULLIF((SELECT COUNT(*) FROM users), 0) AS ent_pct\n"
   required_concepts:
   - filter by plan_code
   - percentage calculation

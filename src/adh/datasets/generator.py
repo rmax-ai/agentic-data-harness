@@ -10,13 +10,34 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
 from rich.console import Console
 
 console = Console()
+
+BENCHMARK_DATE = date(2026, 6, 30)
+
+BENCHMARK_METADATA_SCHEMA = """
+CREATE TABLE IF NOT EXISTS benchmark_metadata (
+    key VARCHAR PRIMARY KEY,
+    value VARCHAR NOT NULL
+);
+"""
+
+DOMAIN_TABLES: dict[str, list[str]] = {
+    "sales_analytics": ["customers", "orders", "refunds"],
+    "support_tickets": ["accounts", "tickets"],
+    "product_usage": ["users", "events"],
+}
+"""Maps domain names to their benchmark data tables for safe reset operations."""
+
+
+class DatasetAlreadyExistsError(RuntimeError):
+    """Raised when dataset generation would append into an existing benchmark dataset."""
+
 
 # ─────────────────────────────────────────────
 # Domain schemas
@@ -110,26 +131,37 @@ class DataGenerator:
     def __init__(self, db_path: str | Path, seed: int = 42):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.seed = seed
         self.rng = random.Random(seed)
 
-    def generate_all(self, domains: list[str] | None = None):
+    def generate_all(self, domains: list[str] | None = None, reset: bool = False) -> None:
         """Generate all domains or a subset."""
-        all_domains = ["sales_analytics", "support_tickets", "product_usage"]
+        self.rng = random.Random(self.seed)
+        all_domains = list(DOMAIN_TABLES)
         targets = domains or all_domains
 
         conn = duckdb.connect(str(self.db_path))
+        try:
+            self._ensure_generation_target_is_safe(conn, targets=targets, reset=reset)
 
-        for domain in targets:
-            if domain == "sales_analytics":
-                self._generate_sales(conn)
-            elif domain == "support_tickets":
-                self._generate_support(conn)
-            elif domain == "product_usage":
-                self._generate_product(conn)
-            else:
-                console.print(f"[yellow]Unknown domain: {domain}[/]")
+            if reset:
+                for domain in targets:
+                    self._drop_domain_tables(conn, domain)
 
-        conn.close()
+            for domain in targets:
+                if domain == "sales_analytics":
+                    self._generate_sales(conn)
+                elif domain == "support_tickets":
+                    self._generate_support(conn)
+                elif domain == "product_usage":
+                    self._generate_product(conn)
+                else:
+                    console.print(f"[yellow]Unknown domain: {domain}[/]")
+
+            conn.execute(BENCHMARK_METADATA_SCHEMA)
+            self._write_benchmark_metadata(conn)
+        finally:
+            conn.close()
 
     def _generate_sales(self, conn: duckdb.DuckDBPyConnection):
         console.print("[bold]Generating sales_analytics[/]")
@@ -323,10 +355,10 @@ class DataGenerator:
             for i in range(1, 41)
         ]
 
-        # Generate events — last 30 days of data
+        # Generate events for the fixed benchmark window ending on BENCHMARK_DATE
         events = []
         event_id = 1
-        base_date = datetime(2026, 5, 1)
+        base_date = datetime.combine(BENCHMARK_DATE, datetime.min.time()) - timedelta(days=60)
         for _ in range(500):
             user = self.rng.choice(users)
             offset = self.rng.randint(0, 60)
@@ -369,3 +401,65 @@ class DataGenerator:
         console.print(f"  users: {len(users)} rows")
         console.print(f"  events: {len(events)} rows")
         console.print("  [dim]traps: plan_code (not plan names), string timestamps[/]")
+
+    # ── Idempotency & metadata helpers ──
+
+    def _ensure_generation_target_is_safe(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        targets: list[str],
+        reset: bool,
+    ) -> None:
+        """Raise an error if target tables already have rows and reset is not requested."""
+        if reset:
+            return
+        existing = self._existing_nonempty_tables(conn, targets)
+        if existing:
+            joined = ", ".join(existing)
+            raise DatasetAlreadyExistsError(
+                f"Benchmark tables already contain rows: {joined}. "
+                "Re-run with reset=True or pass --reset in the CLI."
+            )
+
+    def _existing_nonempty_tables(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        targets: list[str],
+    ) -> list[str]:
+        """Return list of target benchmark tables that already have rows."""
+        all_tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+        }
+        nonempty: list[str] = []
+        for domain in targets:
+            for table in DOMAIN_TABLES.get(domain, []):
+                if table in all_tables:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                    if count and count[0] > 0:
+                        nonempty.append(table)
+        return nonempty
+
+    def _drop_domain_tables(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        domain: str,
+    ) -> None:
+        """Drop benchmark tables for a single domain (idempotent)."""
+        for table in DOMAIN_TABLES.get(domain, []):
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+        conn.execute("DROP TABLE IF EXISTS benchmark_metadata")
+
+    def _write_benchmark_metadata(self, conn: duckdb.DuckDBPyConnection) -> None:
+        """Upsert benchmark date and seed into the metadata table."""
+        conn.execute("DELETE FROM benchmark_metadata WHERE key IN ('benchmark_date', 'seed')")
+        conn.execute(
+            "INSERT INTO benchmark_metadata VALUES (?, ?)",
+            ["benchmark_date", BENCHMARK_DATE.isoformat()],
+        )
+        conn.execute(
+            "INSERT INTO benchmark_metadata VALUES (?, ?)",
+            ["seed", str(self.seed)],
+        )

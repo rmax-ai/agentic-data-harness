@@ -65,6 +65,8 @@ class OpenAISQLAgent:
         """Run the agent loop for one task. Return result dict."""
         query_history: list[dict] = []
         schema_summary = self._gateway.get_schema_summary()
+        benchmark_metadata = self._db.get_benchmark_metadata()
+        benchmark_date = benchmark_metadata.get("benchmark_date", "unknown")
         error_context = ""
         retrieved_memories = self._retrieve_memories(
             run_id=run_id,
@@ -79,6 +81,7 @@ class OpenAISQLAgent:
         for step in range(1, self.max_steps + 1):
             user_message = USER_MESSAGE_TEMPLATE.format(
                 question=question,
+                benchmark_date=benchmark_date,
                 schema_summary=schema_summary,
                 query_history=json.dumps(query_history, indent=2)
                 if query_history

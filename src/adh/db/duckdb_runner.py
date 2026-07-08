@@ -76,3 +76,14 @@ class DuckDBRunner:
             stmt = statement.strip()
             if stmt:
                 self.conn.execute(stmt)
+
+    def get_benchmark_metadata(self) -> dict[str, str]:
+        """Return benchmark metadata (date, seed) from the metadata table.
+
+        Returns an empty dict if the table does not exist or was not generated yet.
+        """
+        tables = set(self.list_tables())
+        if "benchmark_metadata" not in tables:
+            return {}
+        rows = self.execute("SELECT key, value FROM benchmark_metadata")
+        return {str(key): str(value) for key, value in rows}

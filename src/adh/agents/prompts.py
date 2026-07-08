@@ -31,6 +31,10 @@ Relevant corrective memory:
 USER_MESSAGE_TEMPLATE = """## Task
 {question}
 
+## Benchmark Context
+Benchmark date: {benchmark_date}
+For relative dates such as "last 30 days", use the benchmark date above, not CURRENT_TIMESTAMP.
+
 ## Database Schema
 {schema_summary}
 

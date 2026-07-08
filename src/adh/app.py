@@ -153,6 +153,13 @@ def generate_data(
         int | None,
         typer.Option("--seed", help="Random seed for reproducibility"),
     ] = None,
+    reset: Annotated[
+        bool,
+        typer.Option(
+            "--reset",
+            help="Drop and recreate benchmark tables before inserting rows",
+        ),
+    ] = False,
 ):
     """Generate synthetic benchmark datasets."""
     cfg: HarnessConfig = ctx.obj["config"]
@@ -161,12 +168,16 @@ def generate_data(
 
     console.print(f"[bold cyan]Generating data[/] (seed={s}, db={db})")
 
-    from adh.datasets.generator import DataGenerator
+    from adh.datasets.generator import DataGenerator, DatasetAlreadyExistsError
 
     gen = DataGenerator(db_path=db, seed=s)
 
     domains = [domain] if domain and domain != "all" else None
-    gen.generate_all(domains=domains)
+    try:
+        gen.generate_all(domains=domains, reset=reset)
+    except DatasetAlreadyExistsError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
     console.print("[bold green]Datasets generated.[/]")
 
 

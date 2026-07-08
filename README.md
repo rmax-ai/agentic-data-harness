@@ -26,10 +26,12 @@ uv sync --extra dev
 # Or:
 #   export OPENAI_API_KEY=sk-your-key-here
 
-# Generate benchmark data (requires a clean database — delete data/duckdb/benchmark.db first if re-running)
-rm -f data/duckdb/benchmark.db
+# Generate benchmark data
 uv run adh init-db
 uv run adh generate-data
+
+# Recreate benchmark data safely on later runs
+uv run adh generate-data --reset
 
 # Run a baseline (16 tasks)
 uv run adh run --mode raw --tasks tasks/small.yaml
