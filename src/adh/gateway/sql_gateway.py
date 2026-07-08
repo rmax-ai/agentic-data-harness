@@ -1,13 +1,16 @@
-"""SQL gateway with validation, execution, and (future) caching."""
+"""SQL gateway with validation, fingerprinting, caching, and execution."""
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from adh.db.duckdb_runner import DuckDBRunner
 from adh.db.sql_safety import validate_sql
+from adh.gateway.fingerprint import compute_fingerprints
+from adh.gateway.cache import QueryCache
 
 
 @dataclass
@@ -27,7 +30,7 @@ class SQLResult:
 
 
 class SQLGateway:
-    """Validates, fingerprints (future), and executes SQL queries.
+    """Validates, fingerprints, caches, and executes SQL queries.
 
     Phase 2 (MVP): validation + execution only.
     Phase 3: adds fingerprinting and caching.
@@ -41,9 +44,10 @@ class SQLGateway:
     ):
         self._runner = runner
         self.cache_enabled = cache_enabled
+        self._cache = QueryCache(runner) if cache_enabled else None
 
     def execute(self, sql: str) -> SQLResult:
-        """Validate and execute a SQL query. Return structured result."""
+        """Validate, fingerprint, check cache, and execute a SQL query."""
         t0 = time.monotonic()
 
         # 1. Validate read-only
@@ -57,29 +61,108 @@ class SQLGateway:
                 feedback={"error_type": "blocked_sql", "message": error} if error else None,
             )
 
-        # 2. Execute (caching will be Phase 3)
+        # 2. Compute fingerprints
+        fps = compute_fingerprints(sql)
+        fp = fps["normalized"]
+
+        # 3. Check cache
+        if self._cache is not None:
+            cached = self._cache.get(fp)
+            if cached is not None:
+                latency = _elapsed(t0)
+                result = self._cached_to_result(cached, fp, latency)
+                return result
+
+        # 4. Execute
         try:
             rows = self._runner.execute(sql)
             latency = _elapsed(t0)
+
+            # Cache successful result
+            if self._cache is not None:
+                self._cache.put(
+                    fingerprint=fp,
+                    normalized_sql=sql,
+                    result_rows=rows,
+                    row_count=len(rows),
+                    latency_ms=latency,
+                )
+
             return SQLResult(
                 success=True,
                 rows=rows,
                 row_count=len(rows),
-                cache_status="executed",
+                fingerprint=fp,
+                cache_status="miss" if self._cache is not None else "executed",
                 latency_ms=latency,
             )
         except Exception as e:
             latency = _elapsed(t0)
             error_msg = str(e)
             error_type = _classify_error(error_msg)
+
+            # Cache error result for deterministic errors
+            if self._cache is not None and error_type not in ("unknown", "timeout"):
+                self._cache.put(
+                    fingerprint=fp,
+                    normalized_sql=sql,
+                    error_msg=error_msg,
+                    error_type=error_type,
+                    latency_ms=latency,
+                )
+
             return SQLResult(
                 success=False,
                 error_type=error_type,
                 error_message=error_msg,
-                cache_status="executed",
+                fingerprint=fp,
+                cache_status="miss" if self._cache is not None else "executed",
                 latency_ms=latency,
                 feedback=_build_feedback(error_type, error_msg, self._runner, sql),
             )
+
+    def _cached_to_result(self, cached: dict[str, Any], fingerprint: str, latency_ms: int) -> SQLResult:
+        """Convert a cached entry back to an SQLResult."""
+        if cached["result_json"] is not None:
+            rows_raw = json.loads(cached["result_json"])
+            rows = [tuple(r) for r in rows_raw]
+            return SQLResult(
+                success=True,
+                rows=rows,
+                row_count=cached["row_count"],
+                fingerprint=fingerprint,
+                cache_status="hit",
+                latency_ms=latency_ms,
+            )
+        elif cached["error_json"] is not None:
+            error_data = json.loads(cached["error_json"])
+            return SQLResult(
+                success=False,
+                error_type=error_data.get("error_type", "unknown"),
+                error_message=error_data.get("error_message", ""),
+                fingerprint=fingerprint,
+                cache_status="hit",
+                latency_ms=latency_ms,
+            )
+        return SQLResult(
+            success=False,
+            error_type="unknown",
+            error_message="Corrupt cache entry",
+            fingerprint=fingerprint,
+            cache_status="error",
+            latency_ms=latency_ms,
+        )
+
+    def cache_stats(self) -> dict[str, Any]:
+        """Return cache statistics."""
+        if self._cache is None:
+            return {"enabled": False}
+        return self._cache.stats()
+
+    def clear_cache(self):
+        """Clear the query cache."""
+        if self._cache is not None:
+            self._cache.clear()
 
     def get_schema_summary(self) -> str:
         return self._runner.get_schema_summary()
