@@ -148,8 +148,8 @@ class BenchmarkRunner:
         if actual_value is None:
             return {"correct": False, "reason": "no_value_in_answer"}
 
-        # Skip tasks with placeholder expected values
-        if expected_value == "??" or (isinstance(expected_value, (int, float)) and expected_value == 0 and expected.get("sql")):
+        # Skip tasks with placeholder expected values ("??")
+        if expected_value == "??":
             # Tasks with "??" expected values need computed results — skip evaluation
             return {"correct": None, "reason": "skipped_placeholder_value", "note": "Expected value not precomputed for this task type"}
 
