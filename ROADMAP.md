@@ -1,47 +1,48 @@
 # Roadmap
 
-## v0.1.0 — MVP (current)
+## v0.1.0 — MVP ✅
 
 - [x] Repo skeleton, CLI, config loader
 - [x] DuckDB dataset generator (3 domains, intentional traps)
 - [x] 16 benchmark tasks with expected answers
-- [x] Raw SQL agent loop (OpenAI, structured JSON, trace logging)
+- [x] Raw SQL agent loop (OpenAI gpt-5.4-mini, structured JSON, trace logging)
 - [x] Read-only SQL validation
 - [x] Error classification (deterministic)
 - [x] Answer evaluation (numeric, exact, set)
 - [x] JSONL trace logging
-- [ ] Baseline raw mode run
+- [x] Baseline raw mode run — 8/16 (50%)
 
-## v0.2.0 — Fingerprint + Cache
+## v0.2.0 — Fingerprint + Cache ✅
 
-- [ ] SQL fingerprinting (Level 1: raw hash, Level 2: normalized hash)
-- [ ] Query cache table (DuckDB)
-- [ ] Cache hit/miss tracing
-- [ ] Cached mode benchmark run
-- [ ] Comparison report: raw vs cached
+- [x] SQL fingerprinting (Level 1: raw hash, Level 2: sqlglot-normalized)
+- [x] Query cache table (in-memory DuckDB)
+- [x] Cache hit/miss tracing
+- [x] Cached mode benchmark run — 8/16 (50%, no cross-task hits in 16-task set)
 
-## v0.3.0 — Corrective Memory
+## v0.3.0 — Corrective Memory ✅
 
-- [ ] Failure classifier (deterministic → model-assisted)
-- [ ] Why-not feedback generator
-- [ ] Corrective memory table
-- [ ] Memory retrieval + injection
-- [ ] Memory distiller (post-task)
-- [ ] Cached+memory mode benchmark run
-- [ ] Full 3-mode comparison report
+- [x] Failure classifier — 7 deterministic error types (why_not.py)
+- [x] Why-not feedback generator — column suggestions, sample values, date ranges
+- [x] Corrective memory table (DuckDB, dedup, confidence tracking)
+- [x] Memory distiller — feedback → memory entries
+- [x] Memory retrieval + injection into agent context
+- [x] Cached+memory mode benchmark run — 8/16 (50%)
+- [x] 3-mode comparison report (markdown + JSON)
 
 ## v0.4.0 — Production Polish
 
-- [ ] Cost tracking (tiktoken)
-- [ ] Full 60-task benchmark
-- [ ] Result analysis notebook
-- [ ] Publishable report template
-- [ ] CI/CD pipeline
+- [ ] File-backed cache (persist across runs)
+- [ ] Cost tracking (tiktoken token counting)
+- [ ] Failure mode aggregation in comparison report
+- [ ] Full 60-task benchmark run
+- [ ] Publishable analysis (metrics notebook or article)
+- [ ] CI/CD pipeline (GitHub Actions)
 
 ## Future
 
-- [ ] Structural fingerprint (Level 3)
-- [ ] Model-assisted failure classification
-- [ ] Multi-model comparison (nano vs mini vs full)
+- [ ] Structural fingerprint (Level 3 — AST normal form)
+- [ ] Model-assisted failure classification (LLM classifier for edge cases)
+- [ ] Multi-model comparison (nano vs mini vs full, non-OpenAI)
 - [ ] Adversarial task generation
 - [ ] Streaming trace visualization
+- [ ] Cross-run cache/memory persistence with schema-hash invalidation
