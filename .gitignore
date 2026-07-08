@@ -14,3 +14,4 @@ reports/*/
 **/uv.lock
 *.db
 .DS_Store
+.envrc
