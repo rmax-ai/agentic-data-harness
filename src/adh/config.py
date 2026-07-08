@@ -8,7 +8,6 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-
 load_dotenv()
 
 
@@ -77,10 +76,7 @@ def load_config(
     if config_path:
         base_path = Path(config_path)
 
-    if base_path.exists():
-        config = HarnessConfig.from_yaml(base_path)
-    else:
-        config = HarnessConfig()
+    config = HarnessConfig.from_yaml(base_path) if base_path.exists() else HarnessConfig()
 
     if model_override:
         config.agent.model = model_override

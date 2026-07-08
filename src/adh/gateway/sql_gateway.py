@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from adh.db.duckdb_runner import DuckDBRunner
 from adh.db.sql_safety import validate_sql
-from adh.gateway.fingerprint import compute_fingerprints
 from adh.gateway.cache import QueryCache
+from adh.gateway.fingerprint import compute_fingerprints
 from adh.gateway.why_not import build_why_not_feedback
+
+if TYPE_CHECKING:
+    from adh.db.duckdb_runner import DuckDBRunner
 
 
 @dataclass
@@ -123,7 +125,9 @@ class SQLGateway:
                 feedback=build_why_not_feedback(error_type, error_msg, self._runner, sql),
             )
 
-    def _cached_to_result(self, cached: dict[str, Any], fingerprint: str, latency_ms: int) -> SQLResult:
+    def _cached_to_result(
+        self, cached: dict[str, Any], fingerprint: str, latency_ms: int
+    ) -> SQLResult:
         """Convert a cached entry back to an SQLResult."""
         if cached["result_json"] is not None:
             rows_raw = json.loads(cached["result_json"])
@@ -202,4 +206,3 @@ def _empty_feedback_if_needed(
     if len(rows) > 0:
         return None
     return build_why_not_feedback("empty_result", "Query returned zero rows", runner, sql)
-

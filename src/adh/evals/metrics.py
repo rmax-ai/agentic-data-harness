@@ -13,10 +13,7 @@ def compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     success_count = sum(1 for r in results if r.get("evaluation", {}).get("correct", False))
     steps = [r.get("steps", 0) for r in results]
-    queries = [
-        sum(1 for q in r.get("query_history", []) if q.get("sql"))
-        for r in results
-    ]
+    queries = [sum(1 for q in r.get("query_history", []) if q.get("sql")) for r in results]
 
     error_types: dict[str, int] = {}
     for r in results:

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from adh.db.duckdb_runner import DuckDBRunner
+if TYPE_CHECKING:
+    from adh.db.duckdb_runner import DuckDBRunner
 
 CACHE_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS query_cache (
@@ -78,10 +78,12 @@ class QueryCache:
 
         error_json = None
         if error_msg:
-            error_json = json.dumps({
-                "error_type": error_type,
-                "error_message": error_msg,
-            })
+            error_json = json.dumps(
+                {
+                    "error_type": error_type,
+                    "error_message": error_msg,
+                }
+            )
 
         self._runner.execute(
             """INSERT OR REPLACE INTO query_cache

@@ -1,9 +1,12 @@
-"""Report generation — placeholder for Phase 6."""
+"""Comparison report generation for raw, cached, and cached-memory runs."""
 
 from __future__ import annotations
 
+import glob
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -13,52 +16,229 @@ from adh.evals.metrics import compute_metrics
 console = Console()
 
 
-def generate_report(run_dir: str | Path):
-    """Generate a comparison report from JSON result files in a run directory."""
-    path = Path(run_dir)
-    if not path.exists():
-        console.print(f"[red]Directory not found: {run_dir}[/]")
-        return
+def generate_comparison_report(
+    raw_results: str | Path | dict[str, Any],
+    cached_results: str | Path | dict[str, Any],
+    memory_results: str | Path | dict[str, Any],
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Generate markdown and JSON comparison artifacts for all three modes."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    # Look for mode-specific JSON files
-    modes = []
+    runs = {
+        "raw": _load_results(raw_results),
+        "cached": _load_results(cached_results),
+        "cached_memory": _load_results(memory_results),
+    }
+    comparison = {mode: _build_mode_summary(data) for mode, data in runs.items()}
+
+    markdown = _build_markdown_report(comparison, runs)
+    markdown_path = output_path / "comparison.md"
+    markdown_path.write_text(markdown)
+
+    payload = {
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "comparison": comparison,
+        "runs": runs,
+    }
+    json_path = output_path / "comparison.json"
+    json_path.write_text(json.dumps(payload, indent=2))
+
+    _print_comparison_table(comparison)
+    console.print(f"[green]Markdown report:[/] {markdown_path}")
+    console.print(f"[green]JSON report:[/] {json_path}")
+
+    return {
+        "markdown_path": str(markdown_path),
+        "json_path": str(json_path),
+        "comparison": comparison,
+    }
+
+
+def generate_report(run_dir: str | Path) -> dict[str, Any] | None:
+    """Generate a comparison report from result JSONs under a directory."""
+    try:
+        mode_paths = resolve_result_inputs([str(run_dir)])
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/]")
+        return None
+    return generate_comparison_report(
+        raw_results=mode_paths["raw"],
+        cached_results=mode_paths["cached"],
+        memory_results=mode_paths["cached_memory"],
+        output_dir=Path(run_dir),
+    )
+
+
+def resolve_result_inputs(inputs: list[str]) -> dict[str, Path]:
+    """Resolve directories, files, or glob patterns into one result file per mode."""
+    discovered: dict[str, list[Path]] = {"raw": [], "cached": [], "cached_memory": []}
+
+    for entry in inputs:
+        for path in _expand_input(entry):
+            if not path.is_file() or path.suffix != ".json":
+                continue
+            try:
+                data = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                continue
+            mode = _normalize_mode(data.get("mode"))
+            if mode in discovered and "results" in data:
+                discovered[mode].append(path)
+
+    missing = [mode for mode, paths in discovered.items() if not paths]
+    if missing:
+        raise ValueError("Missing result files for mode(s): " + ", ".join(sorted(missing)))
+
+    resolved: dict[str, Path] = {}
+    for mode, paths in discovered.items():
+        resolved[mode] = max(paths, key=lambda path: path.stat().st_mtime)
+    return resolved
+
+
+def _expand_input(entry: str) -> list[Path]:
+    if any(char in entry for char in "*?[]"):
+        return [Path(path) for path in glob.glob(entry, recursive=True)]
+
+    path = Path(entry)
+    if path.is_dir():
+        return sorted(path.rglob("*.json"))
+    if path.exists():
+        return [path]
+    return []
+
+
+def _load_results(source: str | Path | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(source, dict):
+        return source
+    path = Path(source)
+    return json.loads(path.read_text())
+
+
+def _build_mode_summary(data: dict[str, Any]) -> dict[str, Any]:
+    metrics = compute_metrics(data.get("results", []))
+    trace_metrics = _trace_metrics(data)
+    return {
+        "mode": _normalize_mode(data.get("mode")),
+        "success_count": metrics.get("success_count", 0),
+        "total_tasks": metrics.get("total_tasks", 0),
+        "success_rate": metrics.get("success_rate", 0.0),
+        "avg_steps": metrics.get("avg_steps", 0.0),
+        "avg_queries": metrics.get("avg_queries", 0.0),
+        "cache_hit_rate": trace_metrics["cache_hit_rate"],
+        "cache_hits": trace_metrics["cache_hits"],
+        "cache_misses": trace_metrics["cache_misses"],
+        "memory_hit_rate": trace_metrics["memory_hit_rate"],
+        "memory_hits": trace_metrics["memory_hits"],
+        "memory_retrievals": trace_metrics["memory_retrievals"],
+    }
+
+
+def _trace_metrics(data: dict[str, Any]) -> dict[str, Any]:
+    cache_hits = 0
+    cache_misses = 0
+    memory_hits = 0
+    memory_retrievals = 0
+
+    trace_path = data.get("trace_path")
+    if trace_path and Path(trace_path).exists():
+        for line in Path(trace_path).read_text().splitlines():
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            event_type = event.get("event_type")
+            if event_type == "cache_hit":
+                cache_hits += 1
+            elif event_type == "cache_miss":
+                cache_misses += 1
+            elif event_type == "memory_retrieved":
+                memory_retrievals += 1
+                extra = event.get("extra") or {}
+                if int(extra.get("count", 0)) > 0:
+                    memory_hits += 1
+    else:
+        for result in data.get("results", []):
+            if result.get("retrieved_memory_ids"):
+                memory_hits += 1
+            if "retrieved_memory_ids" in result:
+                memory_retrievals += 1
+
+    cache_denominator = cache_hits + cache_misses
+    memory_denominator = memory_retrievals
+    return {
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "cache_hit_rate": cache_hits / cache_denominator if cache_denominator else 0.0,
+        "memory_hits": memory_hits,
+        "memory_retrievals": memory_retrievals,
+        "memory_hit_rate": memory_hits / memory_denominator if memory_denominator else 0.0,
+    }
+
+
+def _build_markdown_report(
+    comparison: dict[str, dict[str, Any]],
+    runs: dict[str, dict[str, Any]],
+) -> str:
+    lines = [
+        "# Benchmark Comparison",
+        "",
+        "| Mode | Success | Avg Steps | Avg Queries | Cache Hit Rate | Memory Hit Rate |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
     for mode in ("raw", "cached", "cached_memory"):
-        mode_path = path / f"{mode}.json"
-        if mode_path.exists():
-            with open(mode_path) as f:
-                data = json.load(f)
-                modes.append((mode, data))
+        summary = comparison[mode]
+        lines.append(
+            "| "
+            f"{_display_mode(mode)} | "
+            f"{summary['success_count']}/{summary['total_tasks']} ({summary['success_rate']:.1%}) | "
+            f"{summary['avg_steps']:.2f} | "
+            f"{summary['avg_queries']:.2f} | "
+            f"{summary['cache_hit_rate']:.1%} | "
+            f"{summary['memory_hit_rate']:.1%} |"
+        )
 
-    if not modes:
-        console.print("[yellow]No result JSON files found in directory.[/]")
-        return
+    lines.extend(
+        [
+            "",
+            "## Inputs",
+            "",
+        ]
+    )
+    lines.extend(
+        f"- `{_display_mode(mode)}`: `{runs[mode].get('result_path', 'in-memory')}`"
+        for mode in ("raw", "cached", "cached_memory")
+    )
+    lines.append("")
+    return "\n".join(lines)
 
-    # Build comparison table
+
+def _print_comparison_table(comparison: dict[str, dict[str, Any]]) -> None:
     table = Table(title="Benchmark Comparison")
-    table.add_column("Metric", style="cyan")
-    for mode_name, _ in modes:
-        table.add_column(mode_name.capitalize(), justify="right")
+    table.add_column("Mode", style="cyan")
+    table.add_column("Success", justify="right")
+    table.add_column("Avg Steps", justify="right")
+    table.add_column("Avg Queries", justify="right")
+    table.add_column("Cache Hit Rate", justify="right")
+    table.add_column("Memory Hit Rate", justify="right")
 
-    for label, key in [
-        ("Success Rate", "success_count"),
-        ("Avg Queries", "avg_queries"),
-        ("Total Tasks", "total_tasks"),
-    ]:
-        row = [label]
-        for _, data in modes:
-            results = data.get("results", [])
-            if results:
-                metrics = compute_metrics(results)
-                if key == "success_rate":
-                    row.append(f"{metrics['success_rate']:.1%}")
-                elif key == "success_count":
-                    row.append(f"{metrics['success_count']}/{metrics['total_tasks']}")
-                elif key == "avg_queries":
-                    row.append(f"{metrics['avg_queries']:.1f}")
-                else:
-                    row.append(str(metrics.get(key, "N/A")))
-            else:
-                row.append("N/A")
-        table.add_row(*row)
+    for mode in ("raw", "cached", "cached_memory"):
+        summary = comparison[mode]
+        table.add_row(
+            _display_mode(mode),
+            f"{summary['success_count']}/{summary['total_tasks']} ({summary['success_rate']:.1%})",
+            f"{summary['avg_steps']:.2f}",
+            f"{summary['avg_queries']:.2f}",
+            f"{summary['cache_hit_rate']:.1%}",
+            f"{summary['memory_hit_rate']:.1%}",
+        )
 
     console.print(table)
+
+
+def _normalize_mode(mode: Any) -> str:
+    return str(mode or "").replace("-", "_")
+
+
+def _display_mode(mode: str) -> str:
+    return mode.replace("_", "-")

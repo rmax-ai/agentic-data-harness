@@ -12,7 +12,6 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import duckdb
 from rich.console import Console
@@ -141,14 +140,15 @@ class DataGenerator:
         segments = ["enterprise", "midmarket", "smb"]
 
         # Generate customers
-        customers = []
-        for i in range(1, 51):
-            customers.append({
+        customers = [
+            {
                 "customer_id": i,
                 "name": f"Customer_{i}",
                 "country_code": self.rng.choice(countries),
                 "segment": self.rng.choice(segments),
-            })
+            }
+            for i in range(1, 51)
+        ]
 
         # Generate orders — Q1-Q2 2026
         orders = []
@@ -162,13 +162,17 @@ class DataGenerator:
             # total_cents — trap: NOT total_amount (cents, not euros)
             total_cents = self.rng.randint(500, 500000)
 
-            orders.append({
-                "order_id": order_id,
-                "customer_id": cust["customer_id"],
-                "order_date": order_date,
-                "total_cents": total_cents,
-                "status": self.rng.choice(["completed", "completed", "completed", "pending", "cancelled"]),
-            })
+            orders.append(
+                {
+                    "order_id": order_id,
+                    "customer_id": cust["customer_id"],
+                    "order_date": order_date,
+                    "total_cents": total_cents,
+                    "status": self.rng.choice(
+                        ["completed", "completed", "completed", "pending", "cancelled"]
+                    ),
+                }
+            )
             order_id += 1
 
         # Generate refunds — ~15% of orders
@@ -178,14 +182,20 @@ class DataGenerator:
             if self.rng.random() < 0.15:
                 refund_amount = int(order["total_cents"] * self.rng.uniform(0.1, 0.5))
                 order_date = datetime.strptime(order["order_date"], "%Y-%m-%d")
-                refund_date = (order_date + timedelta(days=self.rng.randint(1, 30))).strftime("%Y-%m-%d")
-                refunds.append({
-                    "refund_id": refund_id,
-                    "order_id": order["order_id"],
-                    "refund_cents": refund_amount,
-                    "refund_date": refund_date,
-                    "reason": self.rng.choice(["customer_request", "damaged", "wrong_item", None]),
-                })
+                refund_date = (order_date + timedelta(days=self.rng.randint(1, 30))).strftime(
+                    "%Y-%m-%d"
+                )
+                refunds.append(
+                    {
+                        "refund_id": refund_id,
+                        "order_id": order["order_id"],
+                        "refund_cents": refund_amount,
+                        "refund_date": refund_date,
+                        "reason": self.rng.choice(
+                            ["customer_request", "damaged", "wrong_item", None]
+                        ),
+                    }
+                )
                 refund_id += 1
 
         # Insert
@@ -208,7 +218,9 @@ class DataGenerator:
         console.print(f"  customers: {len(customers)} rows")
         console.print(f"  orders: {len(orders)} rows")
         console.print(f"  refunds: {len(refunds)} rows")
-        console.print("  [dim]traps: country_code (not country names), total_cents (not total_amount), string dates[/]")
+        console.print(
+            "  [dim]traps: country_code (not country names), total_cents (not total_amount), string dates[/]"
+        )
 
     def _generate_support(self, conn: duckdb.DuckDBPyConnection):
         console.print("[bold]Generating support_tickets[/]")
@@ -218,14 +230,15 @@ class DataGenerator:
         countries = ["NL", "DE", "FR", "ES", "UK", "US"]
 
         # Generate accounts
-        accounts = []
-        for i in range(1, 31):
-            accounts.append({
+        accounts = [
+            {
                 "account_id": i,
                 "name": f"Account_{i}",
                 "segment": self.rng.choice(segments),
                 "country_code": self.rng.choice(countries),
-            })
+            }
+            for i in range(1, 31)
+        ]
 
         # Generate tickets — Q1-Q2 2026
         tickets = []
@@ -241,17 +254,21 @@ class DataGenerator:
             resolved_at = None
             if self.rng.random() < 0.7:
                 resolve_offset = self.rng.randint(1, 14)
-                resolved_at = (datetime.strptime(created_at, "%Y-%m-%d") + timedelta(days=resolve_offset)).strftime("%Y-%m-%d")
+                resolved_at = (
+                    datetime.strptime(created_at, "%Y-%m-%d") + timedelta(days=resolve_offset)
+                ).strftime("%Y-%m-%d")
 
-            tickets.append({
-                "ticket_id": ticket_id,
-                "account_id": account["account_id"],
-                "priority": self.rng.choice(priorities),
-                "created_at": created_at,
-                "resolved_at": resolved_at,
-                "category": self.rng.choice(categories),
-                "satisfaction_score": self.rng.randint(1, 5) if resolved_at else None,
-            })
+            tickets.append(
+                {
+                    "ticket_id": ticket_id,
+                    "account_id": account["account_id"],
+                    "priority": self.rng.choice(priorities),
+                    "created_at": created_at,
+                    "resolved_at": resolved_at,
+                    "category": self.rng.choice(categories),
+                    "satisfaction_score": self.rng.randint(1, 5) if resolved_at else None,
+                }
+            )
 
         for a in accounts:
             conn.execute(
@@ -261,7 +278,15 @@ class DataGenerator:
         for t in tickets:
             conn.execute(
                 "INSERT INTO tickets VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [t["ticket_id"], t["account_id"], t["priority"], t["created_at"], t["resolved_at"], t["category"], t["satisfaction_score"]],
+                [
+                    t["ticket_id"],
+                    t["account_id"],
+                    t["priority"],
+                    t["created_at"],
+                    t["resolved_at"],
+                    t["category"],
+                    t["satisfaction_score"],
+                ],
             )
 
         console.print(f"  accounts: {len(accounts)} rows")
@@ -274,18 +299,29 @@ class DataGenerator:
 
         plans = ["free", "pro", "ent"]
         regions = ["NL", "DE", "FR", "ES", "US", "UK", "SE"]
-        event_names = ["login", "create_report", "export_data", "invite_user", "view_dashboard", "edit_profile", "run_analysis"]
+        event_names = [
+            "login",
+            "create_report",
+            "export_data",
+            "invite_user",
+            "view_dashboard",
+            "edit_profile",
+            "run_analysis",
+        ]
         features = ["reports", "dashboards", "exports", "team", "analytics", "settings"]
 
         # Generate users
-        users = []
-        for i in range(1, 41):
-            users.append({
+        users = [
+            {
                 "user_id": i,
                 "plan_code": self.rng.choices(plans, weights=[0.4, 0.35, 0.25])[0],
-                "signup_date": (datetime(2025, 6, 1) + timedelta(days=self.rng.randint(0, 365))).strftime("%Y-%m-%d"),
+                "signup_date": (
+                    datetime(2025, 6, 1) + timedelta(days=self.rng.randint(0, 365))
+                ).strftime("%Y-%m-%d"),
                 "region_code": self.rng.choice(regions),
-            })
+            }
+            for i in range(1, 41)
+        ]
 
         # Generate events — last 30 days of data
         events = []
@@ -294,15 +330,22 @@ class DataGenerator:
         for _ in range(500):
             user = self.rng.choice(users)
             offset = self.rng.randint(0, 60)
-            event_ts = (base_date + timedelta(days=offset, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59))).strftime("%Y-%m-%d %H:%M:%S")
-            events.append({
-                "event_id": event_id,
-                "user_id": user["user_id"],
-                "event_name": self.rng.choice(event_names),
-                "event_ts": event_ts,
-                "feature": self.rng.choice(features),
-                "duration_ms": self.rng.randint(50, 30000),
-            })
+            event_ts = (
+                base_date
+                + timedelta(
+                    days=offset, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59)
+                )
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            events.append(
+                {
+                    "event_id": event_id,
+                    "user_id": user["user_id"],
+                    "event_name": self.rng.choice(event_names),
+                    "event_ts": event_ts,
+                    "feature": self.rng.choice(features),
+                    "duration_ms": self.rng.randint(50, 30000),
+                }
+            )
             event_id += 1
 
         for u in users:
@@ -313,7 +356,14 @@ class DataGenerator:
         for e in events:
             conn.execute(
                 "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)",
-                [e["event_id"], e["user_id"], e["event_name"], e["event_ts"], e["feature"], e["duration_ms"]],
+                [
+                    e["event_id"],
+                    e["user_id"],
+                    e["event_name"],
+                    e["event_ts"],
+                    e["feature"],
+                    e["duration_ms"],
+                ],
             )
 
         console.print(f"  users: {len(users)} rows")

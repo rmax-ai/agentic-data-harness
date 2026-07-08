@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from adh.db.duckdb_runner import DuckDBRunner
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from adh.db.duckdb_runner import DuckDBRunner
 
 
 def get_table_columns(runner: DuckDBRunner, table: str) -> list[dict]:
@@ -14,27 +17,19 @@ def get_table_columns(runner: DuckDBRunner, table: str) -> list[dict]:
         return []
 
 
-def get_sample_values(
-    runner: DuckDBRunner, table: str, column: str, limit: int = 10
-) -> list[str]:
+def get_sample_values(runner: DuckDBRunner, table: str, column: str, limit: int = 10) -> list[str]:
     """Return sample distinct values for a column."""
     try:
-        rows = runner.execute(
-            f"SELECT DISTINCT {column} FROM {table} LIMIT {limit}"
-        )
+        rows = runner.execute(f"SELECT DISTINCT {column} FROM {table} LIMIT {limit}")
         return [str(row[0]) for row in rows]
     except Exception:
         return []
 
 
-def get_date_range(
-    runner: DuckDBRunner, table: str, column: str
-) -> tuple[str, str] | None:
+def get_date_range(runner: DuckDBRunner, table: str, column: str) -> tuple[str, str] | None:
     """Return (min, max) date values for a column."""
     try:
-        rows = runner.execute(
-            f"SELECT MIN({column}), MAX({column}) FROM {table}"
-        )
+        rows = runner.execute(f"SELECT MIN({column}), MAX({column}) FROM {table}")
         return (str(rows[0][0]), str(rows[0][1]))
     except Exception:
         return None

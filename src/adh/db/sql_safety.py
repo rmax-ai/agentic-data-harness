@@ -60,4 +60,4 @@ def validate_sql(sql: str) -> tuple[bool, str | None]:
         if stripped.startswith(prefix):
             return True, None
 
-    return False, f"Unknown SQL statement type. Allowed: SELECT, WITH, DESCRIBE, SHOW, PRAGMA"
+    return False, "Unknown SQL statement type. Allowed: SELECT, WITH, DESCRIBE, SHOW, PRAGMA"

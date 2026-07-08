@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.table import Table
 
-from adh.agents.openai_sql_agent import OpenAISQLAgent
-from adh.db.duckdb_runner import DuckDBRunner
-from adh.gateway.sql_gateway import SQLGateway
-from adh.tracing.events import TraceStore
+from adh.memory.distiller import (
+    clear_task_questions,
+    configure_memory_store,
+    register_task_question,
+)
+from adh.tracing.events import EventType, TraceEvent, TraceStore
+
+if TYPE_CHECKING:
+    from adh.agents.openai_sql_agent import OpenAISQLAgent
+    from adh.db.duckdb_runner import DuckDBRunner
+    from adh.gateway.sql_gateway import SQLGateway
+    from adh.memory.store import CorrectiveMemory
 
 console = Console()
 
@@ -31,6 +37,7 @@ class BenchmarkRunner:
         mode: str = "raw",
         seed: int = 42,
         output_dir: str = "reports",
+        memory_store: CorrectiveMemory | None = None,
     ):
         self.agent = agent
         self._db = db_runner
@@ -38,20 +45,29 @@ class BenchmarkRunner:
         self.mode = mode
         self.seed = seed
         self.output_dir = Path(output_dir)
+        self._memory_store = memory_store
 
-    def run(self, tasks_path: str) -> list[dict[str, Any]]:
-        """Run all tasks from a YAML file and return results."""
+    def run(self, tasks_path: str) -> dict[str, Any]:
+        """Run all tasks from a YAML file and return the saved summary payload."""
         with open(tasks_path) as f:
             tasks_data = yaml.safe_load(f)
 
         tasks = tasks_data.get("tasks", [])
         if not tasks:
             console.print("[red]No tasks found in task file.[/]")
-            return []
+            return {}
 
-        run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
+        run_id = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%SZ")
         run_dir = self.output_dir / f"{run_id}-{self.mode}"
         run_dir.mkdir(parents=True, exist_ok=True)
+
+        self._gateway.clear_cache()
+        if self._memory_store is not None:
+            self._memory_store.clear()
+        clear_task_questions()
+        for task in tasks:
+            register_task_question(task["id"], task["question"])
+        configure_memory_store(self._memory_store)
 
         trace_store = TraceStore(run_dir)
         self.agent._trace = trace_store  # Inject trace store
@@ -66,6 +82,7 @@ class BenchmarkRunner:
             task_id = task["id"]
             question = task["question"]
             expected = task.get("expected_answer", {})
+            domain = task.get("domain")
 
             console.print(f"  [{i}/{len(tasks)}] {task_id}: {question[:80]}...")
 
@@ -74,11 +91,25 @@ class BenchmarkRunner:
                 question=question,
                 run_id=run_id,
                 mode=self.mode,
+                domain=domain,
             )
 
             # Evaluate answer
             evaluation = self._evaluate_answer(result.get("answer"), expected, task)
             result["evaluation"] = evaluation
+            result["domain"] = domain
+
+            used_memory_ids: list[str] = []
+            if evaluation.get("correct", False) and self._memory_store is not None:
+                used_memory_ids = _unique_memory_ids(
+                    [
+                        *result.get("retrieved_memory_ids", []),
+                        *result.get("created_memory_ids", []),
+                    ]
+                )
+                for memory_id in used_memory_ids:
+                    self._memory_store.mark_success(memory_id)
+            result["used_memory_ids"] = used_memory_ids
 
             if evaluation.get("correct", False):
                 success_count += 1
@@ -88,28 +119,63 @@ class BenchmarkRunner:
             else:
                 console.print(f"    [red]FAIL[/] — {evaluation.get('reason', 'unknown')}")
 
+            trace_store.record(
+                TraceEvent(
+                    run_id=run_id,
+                    task_id=task_id,
+                    mode=self.mode,
+                    step=result.get("steps", 0),
+                    event_type=EventType.TASK_COMPLETE,
+                    model=self.agent.model_config.model,
+                    success=bool(evaluation.get("correct", False)),
+                    error_type=None
+                    if evaluation.get("correct", False)
+                    else evaluation.get("reason"),
+                    extra={
+                        "evaluation": evaluation,
+                        "used_memory_ids": used_memory_ids,
+                    },
+                )
+            )
             results.append(result)
 
-        # Save results
+        cache_stats = self._gateway.cache_stats()
+        memory_stats = (
+            {"enabled": True, **self._memory_store.stats()}
+            if self._memory_store is not None
+            else {"enabled": False}
+        )
+
+        trace_path = trace_store.flush(f"{run_id}-{self.mode}")
         result_path = run_dir / f"{self.mode}.json"
+        summary = {
+            "run_id": run_id,
+            "mode": self.mode,
+            "seed": self.seed,
+            "total_tasks": len(tasks),
+            "success_count": success_count,
+            "success_rate": success_count / len(tasks) if tasks else 0,
+            "result_path": str(result_path),
+            "trace_path": str(trace_path),
+            "cache_stats": cache_stats,
+            "memory_stats": memory_stats,
+            "results": results,
+        }
         with open(result_path, "w") as f:
-            json.dump({
-                "run_id": run_id,
-                "mode": self.mode,
-                "seed": self.seed,
-                "total_tasks": len(tasks),
-                "success_count": success_count,
-                "success_rate": success_count / len(tasks) if tasks else 0,
-                "results": results,
-            }, f, indent=2)
+            json.dump(summary, f, indent=2)
 
-        # Flush traces
-        trace_store.flush(f"{run_id}-{self.mode}")
+        alias_path = self.output_dir / f"{run_id}-{self.mode}.json"
+        with open(alias_path, "w") as f:
+            json.dump(summary, f, indent=2)
 
-        console.print(f"\n[bold]Summary:[/] {success_count}/{len(tasks)} ({success_count/len(tasks)*100:.1f}%)")
+        console.print(
+            f"\n[bold]Summary:[/] {success_count}/{len(tasks)} ({success_count / len(tasks) * 100:.1f}%)"
+        )
         console.print(f"[dim]Results saved to: {result_path}[/]")
+        console.print(f"[dim]Result alias: {alias_path}[/]")
 
-        return results
+        configure_memory_store(None)
+        return summary
 
     def _evaluate_answer(
         self,
@@ -135,7 +201,7 @@ class BenchmarkRunner:
             actual_value = answer.get("answer") or answer.get("result")
             # If still None, try extracting a number from any string field
             if actual_value is None:
-                for key, val in answer.items():
+                for val in answer.values():
                     if isinstance(val, (int, float)):
                         actual_value = val
                         break
@@ -151,11 +217,15 @@ class BenchmarkRunner:
         # Skip tasks with placeholder expected values ("??")
         if expected_value == "??":
             # Tasks with "??" expected values need computed results — skip evaluation
-            return {"correct": None, "reason": "skipped_placeholder_value", "note": "Expected value not precomputed for this task type"}
+            return {
+                "correct": None,
+                "reason": "skipped_placeholder_value",
+                "note": "Expected value not precomputed for this task type",
+            }
 
         if expected_type == "numeric":
             try:
-                actual = float(actual_value) if not isinstance(actual_value, (int, float)) else float(actual_value)
+                actual = float(actual_value)
                 expected_float = float(expected_value)
                 diff = abs(actual - expected_float)
 
@@ -184,8 +254,16 @@ class BenchmarkRunner:
 
         elif expected_type == "set":
             try:
-                actual_set = set(str(actual_value).split(",")) if isinstance(actual_value, str) else set(actual_value or [])
-                expected_set = set(expected_value) if isinstance(expected_value, list) else set(str(expected_value).split(","))
+                actual_set = (
+                    set(str(actual_value).split(","))
+                    if isinstance(actual_value, str)
+                    else set(actual_value or [])
+                )
+                expected_set = (
+                    set(expected_value)
+                    if isinstance(expected_value, list)
+                    else set(str(expected_value).split(","))
+                )
                 if actual_set == expected_set:
                     return {"correct": True, "reason": "set_match"}
                 return {
@@ -204,6 +282,7 @@ def _extract_number(text: str) -> float | None:
     Handles formats like: '€15,612.43', '25 orders', '42.5%', '15,612.43'
     """
     import re
+
     # Remove currency symbols, spaces, and text — keep digits, commas, dots, minus
     cleaned = re.sub(r"[^\d,.\-]", "", text.strip())
     # Remove thousand separators (commas between digits)
@@ -212,3 +291,13 @@ def _extract_number(text: str) -> float | None:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def _unique_memory_ids(memory_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for memory_id in memory_ids:
+        if memory_id and memory_id not in seen:
+            seen.add(memory_id)
+            deduped.append(memory_id)
+    return deduped

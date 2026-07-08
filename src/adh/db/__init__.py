@@ -1,2 +1,1 @@
 """DuckDB interface layer."""
-

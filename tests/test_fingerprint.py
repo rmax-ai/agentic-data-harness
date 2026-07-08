@@ -1,10 +1,9 @@
 """Tests for SQL fingerprinting."""
 
-import pytest
 from adh.gateway.fingerprint import (
-    raw_fingerprint,
-    normalized_fingerprint,
     compute_fingerprints,
+    normalized_fingerprint,
+    raw_fingerprint,
 )
 
 
@@ -37,9 +36,13 @@ class TestNormalizedFingerprint:
         Same casing produces same hash; different casing produces different hash.
         """
         # Same casing → same fingerprint
-        assert normalized_fingerprint("SELECT * FROM users") == normalized_fingerprint("SELECT * FROM users")
+        assert normalized_fingerprint("SELECT * FROM users") == normalized_fingerprint(
+            "SELECT * FROM users"
+        )
         # Different casing → different fingerprint (identifier names differ)
-        assert normalized_fingerprint("select * from users") != normalized_fingerprint("SELECT * FROM USERS")
+        assert normalized_fingerprint("select * from users") != normalized_fingerprint(
+            "SELECT * FROM USERS"
+        )
 
     def test_different_queries_different_hashes(self):
         a = "SELECT * FROM users WHERE id = 1"

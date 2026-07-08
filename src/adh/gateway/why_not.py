@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from adh.db.duckdb_runner import DuckDBRunner
-from adh.db.schema_introspect import get_table_columns, get_sample_values, get_date_range
+from adh.db.schema_introspect import get_date_range, get_sample_values, get_table_columns
+
+if TYPE_CHECKING:
+    from adh.db.duckdb_runner import DuckDBRunner
 
 
 def build_why_not_feedback(
@@ -45,6 +47,7 @@ def build_why_not_feedback(
 def _extract_first_table(sql: str) -> str | None:
     """Extract the first FROM/JOIN table from a SQL query."""
     import re
+
     match = re.search(
         r"(?:FROM|JOIN)\s+(\w+)",
         sql,
@@ -56,6 +59,7 @@ def _extract_first_table(sql: str) -> str | None:
 def _extract_filter_columns(sql: str) -> list[str]:
     """Extract column names used in WHERE clauses."""
     import re
+
     # Find columns after WHERE / AND
     matches = re.findall(r"WHERE|AND\s+(\w+)\.(\w+)", sql, re.IGNORECASE)
     # Also handle bare column references: WHERE column_name =
@@ -172,6 +176,7 @@ def _ambiguous_column_feedback(
 def _extract_missing_column(error_msg: str) -> str | None:
     """Extract the name of the missing column from the error message."""
     import re
+
     # DuckDB: "Referenced column \"total_amount\" not found"
     match = re.search(r'"([^"]+)"', error_msg)
     if match:
@@ -193,10 +198,12 @@ def _find_similar_columns(missing: str, available: list[str]) -> list[str]:
     for col in available:
         col_lower = col.lower()
         # Check common prefix/suffix
-        if col_lower.startswith(missing_lower[:4]) or missing_lower.startswith(col_lower[:4]):
-            suggestions.append(col)
-        # Check substring overlap
-        elif len(set(missing_lower) & set(col_lower)) >= min(len(missing_lower), len(col_lower)) // 2:
+        if (
+            col_lower.startswith(missing_lower[:4])
+            or missing_lower.startswith(col_lower[:4])
+            or len(set(missing_lower) & set(col_lower))
+            >= min(len(missing_lower), len(col_lower)) // 2
+        ):
             suggestions.append(col)
 
     return suggestions[:3]  # Top 3 suggestions

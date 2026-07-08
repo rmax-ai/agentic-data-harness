@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import duckdb
 from pathlib import Path
+
+import duckdb
 
 
 class DuckDBRunner:
@@ -28,15 +29,12 @@ class DuckDBRunner:
     def execute(self, sql: str, params: list | dict | None = None) -> list[tuple]:
         """Execute a read-only SQL query and return results as list of tuples."""
         try:
-            if params:
-                result = self.conn.execute(sql, params)
-            else:
-                result = self.conn.execute(sql)
+            result = self.conn.execute(sql, params) if params else self.conn.execute(sql)
             return result.fetchall()
         except Exception:
             raise
 
-    def execute_df(self, sql: str) -> "duckdb.DuckDBPyRelation":
+    def execute_df(self, sql: str) -> duckdb.DuckDBPyRelation:
         """Execute SQL and return a DuckDB relation (lazy)."""
         return self.conn.sql(sql)
 
@@ -46,7 +44,9 @@ class DuckDBRunner:
 
     def list_tables(self) -> list[str]:
         """List all tables in the database."""
-        result = self.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")
+        result = self.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        )
         return [row[0] for row in result]
 
     def get_schema_summary(self) -> str:

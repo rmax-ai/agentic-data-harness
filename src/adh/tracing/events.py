@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from adh.db.duckdb_runner import DuckDBRunner
+if TYPE_CHECKING:
+    from adh.db.duckdb_runner import DuckDBRunner
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     MODEL_CALL = "model_call"
     SQL_EXECUTION = "sql_execution"
     CACHE_HIT = "cache_hit"
@@ -42,7 +43,7 @@ class TraceEvent(BaseModel):
     error_message: str | None = None
     result_row_count: int = 0
     latency_ms: int = 0
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -59,7 +60,6 @@ class TraceStore:
 
     def flush(self, run_id: str):
         """Write all events to JSONL file."""
-        import json
 
         output_path = self.output_dir / f"traces.{run_id}.jsonl"
         with open(output_path, "w") as f:

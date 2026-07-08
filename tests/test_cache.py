@@ -1,7 +1,9 @@
 """Tests for query cache."""
 
-import pytest
 from pathlib import Path
+
+import pytest
+
 from adh.db.duckdb_runner import DuckDBRunner
 from adh.gateway.cache import QueryCache
 
