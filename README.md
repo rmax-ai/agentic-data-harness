@@ -12,7 +12,7 @@ The harness compares three modes over the same DuckDB benchmark:
 2. Cached SQL agent
 3. Cached SQL agent with corrective memory
 
-It measures success rate, query volume, duplicate plan rate, token cost, failure modes, and memory reuse.
+It measures **success rate** and **memory reuse** across modes. Per-step traces capture query history, error types, cache status, and why-not diagnostics.
 
 ## Quickstart
 
@@ -20,16 +20,23 @@ It measures success rate, query volume, duplicate plan rate, token cost, failure
 # Install
 uv sync --extra dev
 
-# Set your API key (required)
-# Add this line to ~/.hermes/.env:
-#   OPENAI_API_KEY=*** pass hermes/openai/api-key)
-# Or export directly:
-#   export OPENAI_API_KEY=*** Generate benchmark data
+# Set your API key (required — use .envrc or export directly)
+#   cp .envrc.example .envrc   # then edit with your key
+#   direnv allow
+# Or:
+#   export OPENAI_API_KEY=sk-your-key-here
+
+# Generate benchmark data (requires a clean database — delete data/duckdb/benchmark.db first if re-running)
+rm -f data/duckdb/benchmark.db
 uv run adh init-db
 uv run adh generate-data
 
-# Run a baseline
+# Run a baseline (16 tasks)
 uv run adh run --mode raw --tasks tasks/small.yaml
+
+# Run all three modes and compare
+uv run adh run --mode all --tasks tasks/small.yaml
+uv run adh compare reports/2026-0*.json
 
 # Check a specific task
 uv run adh check-task sales_001
@@ -41,11 +48,12 @@ See [docs/architecture.md](docs/architecture.md) for system design and component
 
 ## Configuration
 
-Config files in `configs/`:
-- `default.yaml` — base configuration
-- `model.openai.yaml` — OpenAI model settings
-- `benchmark.small.yaml` — 15-task benchmark config
-- `benchmark.full.yaml` — 60-task benchmark config
+```yaml
+# configs/default.yaml — base configuration
+# configs/model.openai.yaml — OpenAI model settings
+# configs/benchmark.small.yaml — 16-task benchmark config
+# configs/benchmark.full.yaml — 60-task benchmark config
+```
 
 ## License
 
