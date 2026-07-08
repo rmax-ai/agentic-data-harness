@@ -20,15 +20,21 @@ It measures success rate, query volume, duplicate plan rate, token cost, failure
 # Install
 uv sync --extra dev
 
-# Set your API key
-export OPENAI_API_KEY=sk-...
+# Set your API key (required)
+# Recommended: use the wrapper script which resolves from pass store
+./scripts/run.sh run --mode raw --tasks tasks/small.yaml
 
 # Generate benchmark data
 uv run adh init-db
 uv run adh generate-data
 
-# Run a baseline (5 tasks, raw mode)
-uv run adh run --tasks tasks/small.yaml --mode raw
+# Run a baseline
+# Option A: wrapper script (resolves key from pass store automatically)
+./scripts/run.sh run --mode raw --tasks tasks/small.yaml
+
+# Option B: set env var manually
+export OPENAI_API_KEY=sk-...
+uv run adh run --mode raw --tasks tasks/small.yaml
 
 # Check a specific task
 uv run adh check-task sales_001
