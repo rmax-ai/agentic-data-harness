@@ -248,7 +248,7 @@ tasks:
     in the last 30 days?
   expected_answer:
     type: numeric
-    value: 111
+    value: 190
     tolerance: 0
     sql: "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id\
       \ = u.user_id\nWHERE u.plan_code = 'pro'\n  AND CAST(e.event_ts AS TIMESTAMP)\
@@ -1085,8 +1085,8 @@ tasks:
     sql: "SELECT ROUND(\n  COUNT(*) * 100.0\n  / NULLIF((\n    SELECT COUNT(*)\n \
       \   FROM events\n    WHERE event_ts >= '2026-05-01'\n      AND event_ts < '2026-06-01'\n\
       \  ), 0),\n  2\n)\nFROM events e\nJOIN users u ON e.user_id = u.user_id\nWHERE\
-      \ u.plan_code = 'free'\n  AND CAST(e.event_ts AS TIMESTAMP) >= TIMESTAMP '2026-06-30\
-      \ 00:00:00' - INTERVAL 30 DAY\n  AND e.event_ts < '2026-06-01'\n"
+      \ u.plan_code = 'free'\n  AND e.event_ts >= '2026-05-01'\n  AND e.event_ts <\
+      \ '2026-06-01'\n"
   required_concepts:
   - join events to users
   - filter by plan_code = free

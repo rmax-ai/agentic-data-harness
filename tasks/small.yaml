@@ -248,7 +248,7 @@ tasks:
     in the last 30 days?
   expected_answer:
     type: numeric
-    value: 111
+    value: 190
     tolerance: 0
     sql: "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id\
       \ = u.user_id\nWHERE u.plan_code = 'pro'\n  AND CAST(e.event_ts AS TIMESTAMP)\

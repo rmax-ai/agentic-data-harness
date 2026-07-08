@@ -380,6 +380,8 @@ class DataGenerator:
             )
             event_id += 1
 
+        self._align_relative_time_product_events(users, events)
+
         for u in users:
             conn.execute(
                 "INSERT INTO users VALUES (?, ?, ?, ?)",
@@ -403,6 +405,30 @@ class DataGenerator:
         console.print("  [dim]traps: plan_code (not plan names), string timestamps[/]")
 
     # ── Idempotency & metadata helpers ──
+
+    def _align_relative_time_product_events(
+        self,
+        users: list[dict],
+        events: list[dict],
+    ) -> None:
+        """Anchor pro-plan activity to the benchmark-relative 30-day window."""
+        plan_by_user_id = {user["user_id"]: user["plan_code"] for user in users}
+        window_start = datetime.combine(BENCHMARK_DATE, datetime.min.time()) - timedelta(days=30)
+        moved_events = 0
+
+        for event in events:
+            if plan_by_user_id[event["user_id"]] != "pro":
+                continue
+
+            event_ts = datetime.strptime(event["event_ts"], "%Y-%m-%d %H:%M:%S")
+            if event_ts >= window_start:
+                continue
+
+            aligned_ts = window_start + timedelta(
+                hours=moved_events // 60, minutes=moved_events % 60
+            )
+            event["event_ts"] = aligned_ts.strftime("%Y-%m-%d %H:%M:%S")
+            moved_events += 1
 
     def _ensure_generation_target_is_safe(
         self,
