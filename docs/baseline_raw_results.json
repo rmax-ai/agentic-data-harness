@@ -1,0 +1,418 @@
+{
+  "run_id": "2026-07-08T181033Z",
+  "mode": "raw",
+  "seed": 42,
+  "total_tasks": 16,
+  "success_count": 8,
+  "success_rate": 0.5,
+  "results": [
+    {
+      "task_id": "sales_001",
+      "success": true,
+      "answer": {
+        "value": 9559.47,
+        "unit": "EUR",
+        "explanation": "Net revenue was calculated as completed order total_cents minus refund_cents for customers with country_code = 'NL' and order_date in Q1 2026, then converted from cents to euros."
+      },
+      "steps": 5,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the relevant tables to determine how to compute net revenue from Dutch customers in Q1 2026.",
+          "sql": "DESCRIBE orders;",
+          "success": true,
+          "rows": 5,
+          "preview": "[[\"order_id\", \"INTEGER\", \"NO\", \"PRI\", null, null], [\"customer_id\", \"INTEGER\", \"NO\", null, null, null], [\"order_date\", \"VARCHAR\", \"NO\", null, null, null], [\"total_cents\", \"INTEGER\", \"NO\", null, null, null], [\"status\", \"VARCHAR\", \"YES\", null, \"'completed'\", null]]"
+        },
+        {
+          "step": 2,
+          "thought": "I\u2019ll inspect customers and refunds to compute net revenue for Dutch customers in Q1 2026.",
+          "sql": "DESCRIBE customers;",
+          "success": true,
+          "rows": 4,
+          "preview": "[[\"customer_id\", \"INTEGER\", \"NO\", \"PRI\", null, null], [\"name\", \"VARCHAR\", \"NO\", null, null, null], [\"country_code\", \"VARCHAR\", \"NO\", null, null, null], [\"segment\", \"VARCHAR\", \"YES\", null, \"'midmarket'\", null]]"
+        },
+        {
+          "step": 3,
+          "thought": "I\u2019ll inspect refunds and then compute completed-order revenue minus refunds for Dutch customers in Q1 2026.",
+          "sql": "DESCRIBE refunds;",
+          "success": true,
+          "rows": 5,
+          "preview": "[[\"refund_id\", \"INTEGER\", \"NO\", \"PRI\", null, null], [\"order_id\", \"INTEGER\", \"NO\", null, null, null], [\"refund_cents\", \"INTEGER\", \"NO\", null, null, null], [\"refund_date\", \"VARCHAR\", \"NO\", null, null, null], [\"reason\", \"VARCHAR\", \"YES\", null, null, null]]"
+        },
+        {
+          "step": 4,
+          "thought": "I\u2019ll compute completed Q1 2026 orders for Dutch customers and subtract any refunds to get net revenue in euros.",
+          "sql": "SELECT ROUND((SUM(o.total_cents) - COALESCE(SUM(r.refund_cents), 0)) / 100.0, 2) AS net_revenue_eur\nFROM orders o\nJOIN customers c ON o.customer_id = c.customer_id\nLEFT JOIN refunds r ON o.order_id = r.order_id\nWHERE c.country_code = 'NL'\n  AND o.status = 'completed'\n  AND CAST(o.order_date AS DATE) >= DATE '2026-01-01'\n  AND CAST(o.order_date AS DATE) < DATE '2026-04-01';",
+          "success": true,
+          "rows": 1,
+          "preview": "[[9559.47]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "sales_002",
+      "success": true,
+      "answer": {
+        "value": 25,
+        "unit": "count",
+        "explanation": "Counted orders joined to customers where customers.country_code = 'DE' and orders.status = 'completed'."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the relevant tables to count completed orders for customers from Germany.",
+          "sql": "SELECT COUNT(*) AS completed_orders\nFROM orders o\nJOIN customers c ON o.customer_id = c.customer_id\nWHERE c.country_code = 'DE'\n  AND o.status = 'completed';",
+          "success": true,
+          "rows": 1,
+          "preview": "[[25]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "sales_003",
+      "success": true,
+      "answer": {
+        "value": 104014.32,
+        "unit": "EUR",
+        "explanation": "Summed total_cents for orders joined to customers by country_code; DE had the highest total at 10,401,432 cents, which is 104,014.32 euros."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the orders and customers tables to aggregate gross order value by customer country.",
+          "sql": "SELECT c.country_code, SUM(o.total_cents) AS total_cents\nFROM orders o\nJOIN customers c ON o.customer_id = c.customer_id\nGROUP BY c.country_code\nORDER BY total_cents DESC\nLIMIT 1;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[\"DE\", 10401432]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "mismatch: got '104014.32', expected 'DE'"
+      }
+    },
+    {
+      "task_id": "sales_004",
+      "success": true,
+      "answer": {
+        "value": 727.5252,
+        "unit": "EUR",
+        "explanation": "Computed as AVG(refund_cents) / 100 across all rows in refunds, which gives the average refund amount per refunded order."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll compute the average refund amount by joining refunds to orders and converting cents to euros.",
+          "sql": "SELECT AVG(r.refund_cents) / 100.0 AS avg_refund_eur_per_refunded_order\nFROM refunds r;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[727.5252]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "sales_005",
+      "success": true,
+      "answer": {
+        "value": 21,
+        "unit": "count",
+        "explanation": "Counted distinct customers in the customers table with segment = 'enterprise' who placed orders dated from 2026-04-01 through 2026-06-30."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll count distinct customers with orders dated in Q2 2026, restricting to enterprise customers via the customers table segment.",
+          "sql": "SELECT COUNT(DISTINCT o.customer_id) AS enterprise_customer_count\nFROM orders o\nJOIN customers c ON o.customer_id = c.customer_id\nWHERE c.segment = 'enterprise'\n  AND CAST(o.order_date AS DATE) >= DATE '2026-04-01'\n  AND CAST(o.order_date AS DATE) < DATE '2026-07-01';",
+          "success": true,
+          "rows": 1,
+          "preview": "[[21]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "sales_006",
+      "success": true,
+      "answer": {
+        "value": 21622.35,
+        "unit": "EUR",
+        "explanation": "Summed gross revenue across Spanish midmarket customers: 424204 + 1289354 + 453677 = 2167235 cents, which equals 21622.35 euros."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the relevant tables to identify Spanish midmarket customers and sum their order revenue in euros.",
+          "sql": "SELECT c.customer_id, c.name, c.country_code, c.segment, SUM(o.total_cents) AS gross_cents\nFROM customers c\nJOIN orders o ON c.customer_id = o.customer_id\nWHERE c.country_code = 'ES' AND c.segment = 'midmarket'\nGROUP BY c.customer_id, c.name, c.country_code, c.segment\nORDER BY c.customer_id;",
+          "success": true,
+          "rows": 3,
+          "preview": "[[13, \"Customer_13\", \"ES\", \"midmarket\", 424204], [18, \"Customer_18\", \"ES\", \"midmarket\", 1289354], [31, \"Customer_31\", \"ES\", \"midmarket\", 453677]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "outside_tolerance (got 21622.35, expected 12893.54, diff=8728.8100)"
+      }
+    },
+    {
+      "task_id": "sales_007",
+      "success": true,
+      "answer": {
+        "value": 12.5,
+        "unit": "percent",
+        "explanation": "Computed as 100 * distinct refunded orders / distinct total orders, yielding 12.5%."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll compute the share of orders that have at least one matching refund record.",
+          "sql": "SELECT 100.0 * COUNT(DISTINCT r.order_id) / COUNT(DISTINCT o.order_id) AS refund_order_pct\nFROM orders o\nLEFT JOIN refunds r ON o.order_id = r.order_id;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[12.5]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "support_001",
+      "success": true,
+      "answer": {
+        "value": 4,
+        "unit": "count",
+        "explanation": "Counted tickets with priority 'P0' joined to accounts where segment = 'enterprise'."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll count tickets with priority P0 joined to enterprise accounts.",
+          "sql": "SELECT COUNT(*) AS p0_tickets\nFROM tickets t\nJOIN accounts a ON t.account_id = a.account_id\nWHERE t.priority = 'P0'\n  AND a.segment = 'enterprise';",
+          "success": true,
+          "rows": 1,
+          "preview": "[[4]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "support_002",
+      "success": true,
+      "answer": {
+        "value": null,
+        "unit": "average satisfaction score by category",
+        "explanation": "Resolved tickets were filtered with resolved_at IS NOT NULL and averaged by category; the results are access 3.4375, billing 2.4, feature_request 3.0588235294117645, general 2.8181818181818183, and technical 2.7333333333333334."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll compute the average satisfaction score for resolved tickets grouped by category.",
+          "sql": "SELECT category, AVG(satisfaction_score) AS avg_satisfaction_score\nFROM tickets\nWHERE resolved_at IS NOT NULL\nGROUP BY category\nORDER BY category;",
+          "success": true,
+          "rows": 5,
+          "preview": "[[\"access\", 3.4375], [\"billing\", 2.4], [\"feature_request\", 3.0588235294117645], [\"general\", 2.8181818181818183], [\"technical\", 2.7333333333333334]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "no_value_in_answer"
+      }
+    },
+    {
+      "task_id": "support_003",
+      "success": true,
+      "answer": {
+        "value": 18,
+        "unit": "count",
+        "explanation": "Grouped unresolved tickets by account segment and found that midmarket has the highest count with 18 unresolved tickets."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll count unresolved tickets by account segment and return the segment with the highest count.",
+          "sql": "SELECT a.segment, COUNT(*) AS unresolved_tickets\nFROM tickets t\nJOIN accounts a ON t.account_id = a.account_id\nWHERE t.resolved_at IS NULL\nGROUP BY a.segment\nORDER BY unresolved_tickets DESC\nLIMIT 1;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[\"midmarket\", 18]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "mismatch: got '18', expected 'midmarket'"
+      }
+    },
+    {
+      "task_id": "support_004",
+      "success": true,
+      "answer": {
+        "value": 12.0,
+        "unit": "percent",
+        "explanation": "Billing-related tickets were counted as those with category containing 'billing'; the result is 12.0% of all tickets."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll count billing-related tickets and divide by all tickets to compute the percentage.",
+          "sql": "SELECT 100.0 * SUM(CASE WHEN LOWER(category) LIKE '%billing%' THEN 1 ELSE 0 END) / COUNT(*) AS billing_ticket_percentage FROM tickets;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[12.0]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "support_005",
+      "success": true,
+      "answer": {
+        "value": 6,
+        "unit": "months",
+        "explanation": "The query grouped tickets by month in 2026 and returned 6 monthly rows, indicating ticket counts were created in 6 months of 2026."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll count tickets by month in 2026 using the tickets table and group by the month extracted from created_at.",
+          "sql": "SELECT strftime('%Y-%m', CAST(created_at AS TIMESTAMP)) AS month, COUNT(*) AS ticket_count\nFROM tickets\nWHERE created_at >= '2026-01-01' AND created_at < '2027-01-01'\nGROUP BY 1\nORDER BY 1;",
+          "success": true,
+          "rows": 6,
+          "preview": "[[\"2026-01\", 22], [\"2026-02\", 16], [\"2026-03\", 17], [\"2026-04\", 16], [\"2026-05\", 14]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "mismatch: got '6', expected '2026-01'"
+      }
+    },
+    {
+      "task_id": "product_001",
+      "success": true,
+      "answer": {
+        "value": 77,
+        "unit": "count",
+        "explanation": "Counted events joined to users where plan_code = 'pro' and event_ts was within the last 30 days."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the users and events tables to determine how to identify pro-plan users and count their events in the last 30 days.",
+          "sql": "SELECT COUNT(*) AS event_count\nFROM events e\nJOIN users u ON e.user_id = u.user_id\nWHERE u.plan_code = 'pro'\n  AND CAST(e.event_ts AS TIMESTAMP) >= CURRENT_TIMESTAMP - INTERVAL 30 DAY;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[77]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "outside_tolerance (got 77.0, expected 190.0, diff=113.0000)"
+      }
+    },
+    {
+      "task_id": "product_002",
+      "success": true,
+      "answer": {
+        "value": 16348.919540229885,
+        "unit": "ms",
+        "explanation": "Computed AVG(duration_ms) by feature and selected the maximum; the top feature is exports with an average duration of 16348.919540229885 ms."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll compute the average duration by feature and identify the highest one.",
+          "sql": "SELECT feature, AVG(duration_ms) AS avg_duration_ms\nFROM events\nGROUP BY feature\nORDER BY avg_duration_ms DESC\nLIMIT 1;",
+          "success": true,
+          "rows": 1,
+          "preview": "[[\"exports\", 16348.919540229885]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "mismatch: got '16348.919540229885', expected 'exports'"
+      }
+    },
+    {
+      "task_id": "product_003",
+      "success": true,
+      "answer": {
+        "value": 35,
+        "unit": "count",
+        "explanation": "Counted distinct user_id values in events where event_name = 'run_analysis'."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "Count distinct user_id values in events where event_name is run_analysis.",
+          "sql": "SELECT COUNT(DISTINCT user_id) AS distinct_users FROM events WHERE event_name = 'run_analysis';",
+          "success": true,
+          "rows": 1,
+          "preview": "[[35]]"
+        }
+      ],
+      "evaluation": {
+        "correct": true,
+        "reason": "within_tolerance"
+      }
+    },
+    {
+      "task_id": "product_004",
+      "success": true,
+      "answer": {
+        "value": 33.33333333333333,
+        "unit": "percent",
+        "explanation": "There are 12 users on the enterprise plan ('ent') out of 40 total users, so 12/40 * 100 = 33.33%."
+      },
+      "steps": 2,
+      "query_history": [
+        {
+          "step": 1,
+          "thought": "I\u2019ll inspect the users table to determine how plan codes are represented, then compute the share on the enterprise plan.",
+          "sql": "SELECT plan_code, COUNT(*) AS user_count FROM users GROUP BY plan_code ORDER BY user_count DESC;",
+          "success": true,
+          "rows": 3,
+          "preview": "[[\"pro\", 16], [\"ent\", 12], [\"free\", 12]]"
+        }
+      ],
+      "evaluation": {
+        "correct": false,
+        "reason": "outside_tolerance (got 33.33333333333333, expected 30.0, diff=3.3333)"
+      }
+    }
+  ]
+}
