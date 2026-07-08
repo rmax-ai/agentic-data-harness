@@ -27,7 +27,7 @@ def memory_store(tmp_path: Path) -> CorrectiveMemory:
 def test_distill_missing_column_creates_corrective_memory(memory_store: CorrectiveMemory) -> None:
     register_task_question(
         "sales_006",
-        "What is the gross revenue in euros from Spanish customers who are in the midmarket segment?",
+        "What is the gross revenue in euros from completed orders by Spanish customers in the midmarket segment?",
     )
     feedback = {
         "error_type": "missing_column",
@@ -63,7 +63,7 @@ def test_distill_empty_result_creates_column_specific_memories(
 ) -> None:
     register_task_question(
         "sales_001",
-        "What was the total net revenue in euros from Dutch customers in Q1 2026?",
+        "What was the total net revenue in euros from completed orders by Dutch customers in Q1 2026?",
     )
     feedback = {
         "error_type": "empty_result",

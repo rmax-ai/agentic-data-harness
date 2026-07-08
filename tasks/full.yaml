@@ -1,7 +1,7 @@
 tasks:
 - id: sales_001
   domain: sales_analytics
-  question: What was the total net revenue in euros from Dutch customers in Q1 2026?
+  question: What was the total net revenue in euros from completed orders by Dutch customers in Q1 2026?
   expected_answer:
     type: numeric
     value: 9559.47
