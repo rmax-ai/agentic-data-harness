@@ -9,7 +9,7 @@ run:
 
 agent:
   max_steps: 8
-  model: "gpt-5.4-mini"
+  model: "gpt-5.6-luna"
   provider: "openai"
   temperature: 0
   max_output_tokens: 1200

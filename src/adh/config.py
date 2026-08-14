@@ -13,7 +13,7 @@ load_dotenv()
 
 class ModelConfig(BaseModel):
     provider: str = "openai"
-    model: str = "gpt-5.4-mini"
+    model: str = "gpt-5.6-luna"
     temperature: float = 0
     max_output_tokens: int = 1200
     timeout_seconds: int = 60
@@ -21,7 +21,7 @@ class ModelConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     max_steps: int = 8
-    model: str = "gpt-5.4-mini"
+    model: str = "gpt-5.6-luna"
     provider: str = "openai"
     temperature: float = 0
     max_output_tokens: int = 1200

@@ -3,7 +3,7 @@
 # Default benchmark model
 default:
   provider: openai
-  model: gpt-5.4-mini
+  model: gpt-5.6-luna
   temperature: 0
   max_output_tokens: 1200
   timeout_seconds: 60

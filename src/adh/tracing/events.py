@@ -32,7 +32,7 @@ class TraceEvent(BaseModel):
     mode: str
     step: int
     event_type: EventType
-    model: str = "gpt-5.4-mini"
+    model: str = "gpt-5.6-luna"
     prompt_tokens: int = 0
     output_tokens: int = 0
     sql: str | None = None
