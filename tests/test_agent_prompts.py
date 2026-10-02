@@ -26,7 +26,9 @@ def test_user_prompt_includes_benchmark_date_and_relative_time_rule() -> None:
 
 
 def test_user_prompt_final_answer_examples_allow_labels_and_source_fields() -> None:
-    assert 'use a string for "which/what category/country/feature" questions' in USER_MESSAGE_TEMPLATE
+    assert (
+        'use a string for "which/what category/country/feature" questions' in USER_MESSAGE_TEMPLATE
+    )
     assert '"source_column": "<column that directly answered the question, e.g. country_code>"' in (
         USER_MESSAGE_TEMPLATE
     )

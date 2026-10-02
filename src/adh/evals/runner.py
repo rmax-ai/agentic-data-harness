@@ -247,25 +247,7 @@ class BenchmarkRunner:
             }
 
         if expected_type == "numeric":
-            try:
-                actual = float(actual_value)
-                expected_float = float(expected_value)
-                diff = abs(actual - expected_float)
-
-                if expected_float != 0:
-                    relative_diff = diff / abs(expected_float)
-                else:
-                    relative_diff = diff if diff > 0 else 0
-
-                if relative_diff <= tolerance:
-                    return {"correct": True, "reason": "within_tolerance"}
-                else:
-                    return {
-                        "correct": False,
-                        "reason": f"outside_tolerance (got {actual}, expected {expected_float}, diff={diff:.4f})",
-                    }
-            except (TypeError, ValueError) as e:
-                return {"correct": False, "reason": f"cannot_compare: {e}"}
+            return _compare_numeric_values(actual_value, expected_value, tolerance)
 
         elif expected_type == "exact":
             if str(actual_value).strip() == str(expected_value).strip():
@@ -296,6 +278,13 @@ class BenchmarkRunner:
             except Exception as e:
                 return {"correct": False, "reason": f"set_comparison_failed: {e}"}
 
+        elif expected_type == "mapping":
+            if not isinstance(actual_value, dict):
+                return {"correct": False, "reason": "mapping_expected_but_not_returned"}
+            if not isinstance(expected_value, dict):
+                return {"correct": False, "reason": "mapping_expected_value_invalid"}
+            return _compare_mapping(actual_value, expected_value, tolerance)
+
         return {"correct": False, "reason": f"unknown_type: {expected_type}"}
 
 
@@ -314,6 +303,76 @@ def _extract_number(text: str) -> float | None:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def _compare_numeric_values(
+    actual_value: Any,
+    expected_value: Any,
+    tolerance: float,
+) -> dict[str, Any]:
+    try:
+        actual = float(actual_value)
+        expected_float = float(expected_value)
+        diff = abs(actual - expected_float)
+
+        if expected_float != 0:
+            relative_diff = diff / abs(expected_float)
+        else:
+            relative_diff = diff if diff > 0 else 0
+
+        if relative_diff <= tolerance:
+            return {"correct": True, "reason": "within_tolerance"}
+        return {
+            "correct": False,
+            "reason": f"outside_tolerance (got {actual}, expected {expected_float}, diff={diff:.4f})",
+        }
+    except (TypeError, ValueError) as e:
+        return {"correct": False, "reason": f"cannot_compare: {e}"}
+
+
+def _compare_mapping(
+    actual_value: dict[str, Any],
+    expected_value: dict[str, Any],
+    tolerance: float,
+) -> dict[str, Any]:
+    missing_keys = [key for key in expected_value if key not in actual_value]
+    if missing_keys:
+        return {"correct": False, "reason": f"mapping_missing_keys: {missing_keys}"}
+
+    for key, expected_item in expected_value.items():
+        actual_item = actual_value[key]
+
+        if _is_numeric_value(expected_item):
+            if isinstance(actual_item, bool):
+                return {
+                    "correct": False,
+                    "reason": f"mapping_value_type_mismatch: key '{key}' got {actual_item!r}, expected numeric",
+                }
+
+            comparison = _compare_numeric_values(actual_item, expected_item, tolerance)
+            if not comparison["correct"]:
+                if str(comparison["reason"]).startswith("cannot_compare:"):
+                    return {
+                        "correct": False,
+                        "reason": f"mapping_value_type_mismatch: key '{key}' got {actual_item!r}, expected numeric",
+                    }
+                return {
+                    "correct": False,
+                    "reason": f"mapping_value_mismatch: key '{key}' {comparison['reason']}",
+                }
+            continue
+
+        if str(actual_item).strip() != str(expected_item).strip():
+            return {
+                "correct": False,
+                "reason": f"mapping_value_mismatch: key '{key}' got '{actual_item}', expected '{expected_item}'",
+            }
+
+    return {"correct": True, "reason": "mapping_match"}
+
+
+def _is_numeric_value(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def _unique_memory_ids(memory_ids: list[str]) -> list[str]:

@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 class FinalAnswer(BaseModel):
     """Final answer structure."""
 
-    value: float | str | int = Field(
+    value: float | str | int | dict[str, float | int | str] = Field(
         description=(
             "Answer value. Strings are valid for categorical answers such as a country, "
-            "segment, or feature."
+            "segment, or feature. Mapping objects are valid for grouped answers."
         )
     )
     unit: str | None = Field(default=None, description="Unit of measurement")

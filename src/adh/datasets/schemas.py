@@ -20,7 +20,7 @@ class Task(BaseModel):
 class ExpectedAnswer(BaseModel):
     """Expected answer for a benchmark task."""
 
-    type: str = "numeric"  # numeric, exact, set
-    value: float | str | list[str]
+    type: str = Field(default="numeric", description="Answer type: numeric, exact, set, or mapping")
+    value: float | str | list[str] | dict[str, float | int | str]
     tolerance: float = 0.01
     sql: str | None = None  # Reference SQL for verification

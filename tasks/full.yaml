@@ -100,7 +100,7 @@ tasks:
   difficulty: medium
 - id: sales_006
   domain: sales_analytics
-  question: What is the gross revenue in euros from Spanish customers who are in the
+  question: What is the gross revenue in euros from completed orders by Spanish customers in the
     midmarket segment?
   expected_answer:
     type: numeric
@@ -160,9 +160,14 @@ tasks:
   domain: support_tickets
   question: What is the average satisfaction score for resolved tickets in each category?
   expected_answer:
-    type: exact
-    value: access
-    tolerance: 0
+    type: mapping
+    value:
+      access: 3.44
+      billing: 2.40
+      feature_request: 3.06
+      general: 2.82
+      technical: 2.73
+    tolerance: 0.01
     sql: 'SELECT t.category, AVG(t.satisfaction_score) AS avg_score
 
       FROM tickets t
@@ -223,8 +228,14 @@ tasks:
   domain: support_tickets
   question: How many tickets were created each month in 2026?
   expected_answer:
-    type: exact
-    value: 2026-01
+    type: mapping
+    value:
+      "2026-01": 22
+      "2026-02": 16
+      "2026-03": 17
+      "2026-04": 16
+      "2026-05": 14
+      "2026-06": 15
     tolerance: 0
     sql: 'SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS ticket_count
 

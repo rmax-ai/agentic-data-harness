@@ -145,3 +145,75 @@ def test_benchmark_runner_repeats_tasks_and_aggregates_per_task_stats(tmp_path: 
         "mem-task_2-2",
         "mem-task_2-3",
     ]
+
+
+def _make_benchmark_runner() -> BenchmarkRunner:
+    return BenchmarkRunner(
+        agent=FakeAgent(),
+        db_runner=FakeRunner(),
+        gateway=FakeGateway(),
+    )
+
+
+def test_evaluate_answer_exact_accepts_string_value() -> None:
+    """String values are valid for 'exact' type."""
+    benchmark = _make_benchmark_runner()
+
+    evaluation = benchmark._evaluate_answer(
+        answer={"value": "midmarket"},
+        expected={"type": "exact", "value": "midmarket", "tolerance": 0},
+        task={"id": "support_003"},
+    )
+
+    assert evaluation == {"correct": True, "reason": "exact_match"}
+
+
+def test_evaluate_answer_mapping_compares_grouped_output() -> None:
+    """Mapping type compares key-value pairs with tolerance."""
+    benchmark = _make_benchmark_runner()
+
+    evaluation = benchmark._evaluate_answer(
+        answer={
+            "value": {
+                "access": 3.4401,
+                "billing": 2.40,
+                "feature_request": 3.06,
+                "general": 2.82,
+                "technical": 2.73,
+            }
+        },
+        expected={
+            "type": "mapping",
+            "value": {
+                "access": 3.44,
+                "billing": 2.40,
+                "feature_request": 3.06,
+                "general": 2.82,
+                "technical": 2.73,
+            },
+            "tolerance": 0.01,
+        },
+        task={"id": "support_002"},
+    )
+
+    assert evaluation == {"correct": True, "reason": "mapping_match"}
+
+
+def test_evaluate_answer_mapping_rejects_scalar_for_grouped_task() -> None:
+    """Scalar answer for mapping task returns wrong-shape reason."""
+    benchmark = _make_benchmark_runner()
+
+    evaluation = benchmark._evaluate_answer(
+        answer={"value": 3.44},
+        expected={
+            "type": "mapping",
+            "value": {"access": 3.44},
+            "tolerance": 0.01,
+        },
+        task={"id": "support_002"},
+    )
+
+    assert evaluation == {
+        "correct": False,
+        "reason": "mapping_expected_but_not_returned",
+    }

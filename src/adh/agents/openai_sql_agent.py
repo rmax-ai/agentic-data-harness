@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from openai import OpenAI
 
 from adh.agents.prompts import SYSTEM_PROMPT_RAW, USER_MESSAGE_TEMPLATE
-from adh.agents.schemas import AgentAction
+from adh.agents.schemas import AgentAction, FinalAnswer
 from adh.memory.distiller import distill_from_failure
 from adh.tracing.events import EventType, TraceEvent, TraceStore
 
@@ -77,6 +77,7 @@ class OpenAISQLAgent:
         )
         created_memory_ids: list[str] = []
         memory_context = _format_memory_context(retrieved_memories, self._memory)
+        final_answer_retry_used = False
 
         for step in range(1, self.max_steps + 1):
             user_message = USER_MESSAGE_TEMPLATE.format(
@@ -98,6 +99,29 @@ class OpenAISQLAgent:
             thought = response.thought_summary or ""
 
             if action == "final" and response.final_answer:
+                final_answer = response.final_answer.model_dump()
+                warning = _validate_final_answer(
+                    question=question,
+                    final_answer=response.final_answer,
+                    query_history=query_history,
+                )
+                if warning and not final_answer_retry_used and step < self.max_steps:
+                    final_answer_retry_used = True
+                    query_history.append(
+                        {
+                            "step": step,
+                            "thought": thought,
+                            "warning": warning,
+                            "candidate_final_answer": final_answer,
+                        }
+                    )
+                    error_context = (
+                        f"Final answer check: {warning}\n"
+                        "Re-check the last successful result. If the question asks for a "
+                        "label, return that label and cite source_column/source_row_index."
+                    )
+                    continue
+
                 self._record_event(
                     run_id,
                     task_id,
@@ -106,12 +130,15 @@ class OpenAISQLAgent:
                     EventType.FINAL_ANSWER,
                     prompt_tokens=self._last_prompt_tokens,
                     output_tokens=self._last_output_tokens,
-                    extra={"final_answer": response.final_answer},
+                    extra={
+                        "final_answer": final_answer,
+                        **({"final_answer_warning": warning} if warning else {}),
+                    },
                 )
                 return {
                     "task_id": task_id,
                     "success": True,
-                    "answer": response.final_answer,
+                    "answer": final_answer,
                     "steps": step,
                     "query_history": query_history,
                     "retrieved_memory_ids": [item["memory_id"] for item in retrieved_memories],
@@ -452,10 +479,83 @@ class OpenAISQLAgent:
         setattr(self, "__last_output_tokens", value)
 
 
-def _format_rows(rows: list[tuple]) -> str:
+def _format_rows(rows: list[tuple], columns: list[str] | None = None) -> str:
     if not rows:
         return "[]"
+    if columns:
+        return json.dumps([dict(zip(columns, row, strict=False)) for row in rows])[:500]
     return json.dumps([list(r) for r in rows])[:500]
+
+
+def _validate_final_answer(
+    question: str,
+    final_answer: FinalAnswer,
+    query_history: list[dict[str, Any]],
+) -> str | None:
+    if not _expects_label_answer(question) or not _is_numeric_value(final_answer.value):
+        return None
+
+    preview_row = _get_preview_row(query_history, final_answer.source_row_index)
+    if preview_row is None:
+        return (
+            "The question asks for a label, but final_answer.value is numeric. Return the "
+            "label that answers the question, not the adjacent metric."
+        )
+
+    has_label = any(isinstance(value, str) and value.strip() for value in preview_row)
+    has_metric = any(_is_numeric_value(value) for value in preview_row)
+    if has_label and has_metric:
+        return (
+            "The question asks for a label, but final_answer.value is numeric while the "
+            "last result row contains both label and metric values. Return the label "
+            "field, not the adjacent metric."
+        )
+
+    return (
+        "The question asks for a label, but final_answer.value is numeric. Return the "
+        "label that answers the question."
+    )
+
+
+def _expects_label_answer(question: str) -> bool:
+    lowered = question.lower().strip()
+    return lowered.startswith("which ") or any(
+        marker in lowered
+        for marker in (
+            "what country",
+            "what segment",
+            "what feature",
+            "what category",
+            "what month",
+        )
+    )
+
+
+def _is_numeric_value(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _get_preview_row(
+    query_history: list[dict[str, Any]],
+    source_row_index: int | None,
+) -> list[Any] | None:
+    row_index = source_row_index or 0
+    for entry in reversed(query_history):
+        if not entry.get("success"):
+            continue
+        preview = entry.get("preview")
+        if not isinstance(preview, str):
+            continue
+        try:
+            rows = json.loads(preview)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rows, list) or row_index < 0 or row_index >= len(rows):
+            continue
+        row = rows[row_index]
+        if isinstance(row, list):
+            return row
+    return None
 
 
 def _format_memory_context(

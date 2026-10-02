@@ -14,6 +14,8 @@ The harness compares three modes over the same DuckDB benchmark:
 
 It measures **success rate** and **memory reuse** across modes. Per-step traces capture query history, error types, cache status, and why-not diagnostics.
 
+Synthetic benchmark data includes fixed metadata such as the benchmark date (`2026-06-30`), which the agent must use for relative-date questions like "last 30 days".
+
 ## Quickstart
 
 ```bash
@@ -26,11 +28,8 @@ uv sync --extra dev
 # Or:
 #   export OPENAI_API_KEY=sk-your-key-here
 
-# Generate benchmark data
+# Generate benchmark data (use --reset for clean re-runs)
 uv run adh init-db
-uv run adh generate-data
-
-# Recreate benchmark data safely on later runs
 uv run adh generate-data --reset
 
 # Run a baseline (16 tasks)
